@@ -10,8 +10,8 @@ from torch.utils import data
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
+from autoencoder import AutoEncoder
 from dataset import yelp_dataset
-from lm import LanguageModel
 
 
 def collate(batch, pad):
@@ -113,34 +113,42 @@ if __name__ == "__main__":
 	torch.random.manual_seed(42)
 	random.seed(42)
 
-	tokenizer_name = "FacebookAI/roberta-base"
+	tokenizer_name = "google-bert/bert-base-uncased"
 	tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 	pad = tokenizer.pad_token_id
 
 	dataset = yelp_dataset(tokenizer_name)
 	train_loader = data.DataLoader(
 		dataset["train"],
-		batch_size=24,
+		batch_size=28,
 		shuffle=True,
 		collate_fn=partial(collate, pad=pad),
-		num_workers=2,
 	)
 	test_loader = data.DataLoader(
 		dataset["test"],
 		batch_size=32,
 		collate_fn=partial(collate, pad=pad),
-		num_workers=2,
 	)
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	model = LanguageModel(
+	model = AutoEncoder(
 		vocab_size=tokenizer.vocab_size,
-		embed_dim=512,
-		pad_idx=pad,
-		head_num=8,
-		layer_num=4,
-		feedforward_dim=1024,
+		pad_idx=tokenizer.pad_token_id,
+
+		model_dim=512,
+		max_len=512,
+
+		encoder_head_num=4,
+		decoder_head_num=4,
+
+		encoder_layer_num=4,
+		decoder_layer_num=4,
+
+		encoder_fc_dim=2048,
+		decoder_fc_dim=2048,
 	)
+	params = sum(p.numel() for p in model.parameters())
+	print("Prams", params, "Vocab", tokenizer.vocab_size)
 	model.to(device)
 
 	criterion = nn.CrossEntropyLoss()

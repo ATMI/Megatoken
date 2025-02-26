@@ -9,7 +9,7 @@ if __name__ == "__main__":
 	torch.random.manual_seed(42)
 	random.seed(42)
 
-	ckpt_path = Path("checkpoint", "0225_1108", "1_5.pth")
+	ckpt_path = Path("checkpoint", "0225_1108", "2_3.pth")
 	ckpt = torch.load(ckpt_path, weights_only=True)
 
 	tokenizer_name = "FacebookAI/roberta-base"
