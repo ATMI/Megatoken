@@ -1,28 +1,37 @@
-from pathlib import Path
 import random
+from pathlib import Path
+
 import torch
 from transformers import AutoTokenizer
 
-from lm import LanguageModel
+from autoencoder import AutoEncoder
 
 if __name__ == "__main__":
 	torch.random.manual_seed(42)
 	random.seed(42)
 
-	ckpt_path = Path("checkpoint", "0225_1108", "2_3.pth")
+	ckpt_path = Path("checkpoint", "0226_0815", "2_6.pth")
 	ckpt = torch.load(ckpt_path, weights_only=True)
 
-	tokenizer_name = "FacebookAI/roberta-base"
+	tokenizer_name = "google-bert/bert-base-uncased"
 	tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	model = LanguageModel(
+	model = AutoEncoder(
 		vocab_size=tokenizer.vocab_size,
-		embed_dim=512,
 		pad_idx=tokenizer.pad_token_id,
-		head_num=8,
-		layer_num=4,
-		feedforward_dim=1024,
+
+		model_dim=512,
+		max_len=512,
+
+		encoder_head_num=4,
+		decoder_head_num=4,
+
+		encoder_layer_num=4,
+		decoder_layer_num=4,
+
+		encoder_fc_dim=2048,
+		decoder_fc_dim=2048,
 	)
 	model.load_state_dict(ckpt["model"])
 	model.eval()
@@ -33,8 +42,8 @@ if __name__ == "__main__":
 	model.to(device)
 
 	# text = "Good. Went yesterday with family and enjoyed the oysters"
-	text = "Awful! I want my money back. "
-	t = 0.5
+	text = "Love this place soooo much, never ever had a bad meal, big tasty portions and great friendly people! Be ready to stand in line."
+	temp = 0.15
 
 	x = tokenizer(
 		[text],
@@ -44,21 +53,36 @@ if __name__ == "__main__":
 	)["input_ids"]
 	x = x[:, :-1]
 
+	x = x.to(device)
+	y = model.embedding(x)
+	y = model.positional(y)
+	y = model.encoder(y, None)
+	y = y.unsqueeze(1)
+
+	x = model.positional(y)
+	t = []
+
 	with torch.no_grad():
 		for i in range(100):
-			x = x.to(device)
-			x_pad = torch.zeros_like(x, dtype=torch.bool)
 
-			y = model(x, x_pad)
-			y = y[:, -1]
-			y = y / t
+			y = model.decoder(x, None)
+			y = y[:, -1, :]
+			y = model.classifier(y)
+
+			y = y / temp
 			y = y.softmax(dim=-1)
 			y = torch.multinomial(y, num_samples=1)
-			x = torch.cat((x, y), dim=-1)
 
-			if y.item() == tokenizer.eos_token_id:
+			i_id = y.item()
+			if i_id == 102:
 				break
+			t.append(i_id)
+
+			y = model.embedding(y)
+			y = model.positional(y)
+			x = torch.cat((x, y), dim=1)
+
 
 	print(text)
-	text = tokenizer.decode(x.tolist()[0])
+	text = tokenizer.decode(t)
 	print(text)
