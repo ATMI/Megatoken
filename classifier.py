@@ -25,11 +25,20 @@ class Classifier(nn.Module):
 			embedding_dim=embed_dim,
 			padding_idx=pad_idx,
 		)
-		self.encoder = GatedEncoder(
-			throughput=encoder_throughput,
-			embed_dim=embed_dim,
-			heads_num=encoder_heads_num,
-			fc_dim=encoder_fc_dim,
+		# self.encoder = GatedEncoder(
+		# 	throughput=encoder_throughput,
+		# 	embed_dim=embed_dim,
+		# 	heads_num=encoder_heads_num,
+		# 	fc_dim=encoder_fc_dim,
+		# )
+		self.encoder = nn.TransformerEncoder(
+			encoder_layer=nn.TransformerEncoderLayer(
+				d_model=embed_dim,
+				nhead=encoder_heads_num,
+				dim_feedforward=encoder_fc_dim,
+				batch_first=True,
+			),
+			num_layers=len(encoder_throughput),
 		)
 		self.classifier = nn.Sequential(
 			nn.Dropout(),
@@ -45,7 +54,7 @@ class Classifier(nn.Module):
 		int,
 	]:
 		x = self.embedding(src)
-		x, x_pad = self.encoder(x, src_pad)
+		x = self.encoder(x, None, src_pad, False)
 
 		x = x[:, 0]
 		x = self.classifier(x)

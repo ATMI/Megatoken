@@ -1,3 +1,5 @@
+from typing import List
+
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
@@ -20,19 +22,26 @@ def tokenize(batch, tokenizer):
 	return text
 
 
-def yelp_dataset(
+def prepare_dataset(
+	dataset: str,
 	tokenizer: str,
+	tokenized_col: str,
+	selected_col: List[str] = None,
 	num_proc: int = NUM_PROC,
 ):
-	ds = load_dataset("Yelp/yelp_review_full")
+	if selected_col is None:
+		selected_col = []
+
+	ds = load_dataset(dataset)
 	ds = ds.map(
 		tokenize,
 		fn_kwargs={
 			"tokenizer": tokenizer,
 		},
-		input_columns=["text"],
+		input_columns=[tokenized_col],
 		num_proc=num_proc,
 		batched=True,
 	)
-	ds = ds.select_columns(["tokens", "label"])
+
+	ds = ds.select_columns(["tokens"] + selected_col)
 	return ds

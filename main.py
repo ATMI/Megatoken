@@ -13,12 +13,12 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 
 from classifier import Classifier
-from dataset import yelp_dataset
+from dataset import prepare_dataset
 
 
 def collate(batch, pad):
-	# y = torch.tensor([x["label"] >= 3 for x in batch], dtype=torch.float)
-	y = torch.tensor([x["label"] for x in batch])
+	y = torch.tensor([x["label"] >= 3 for x in batch], dtype=torch.float)
+	# y = torch.tensor([x["label"] for x in batch], dtype=torch.float)
 	x = [torch.tensor(x["tokens"]) for x in batch]
 	x = rnn.pad_sequence(x, batch_first=True, padding_value=pad)
 
@@ -99,6 +99,7 @@ def epoch_pass(
 			optimizer.zero_grad()
 
 		y_pred = model(x, x_pad)
+		y_pred = y_pred.squeeze(-1)
 		loss = criterion(y_pred, y)
 
 		if optimizer is not None:
@@ -111,11 +112,11 @@ def epoch_pass(
 		loss_avg = loss_total / (i + 1)
 
 		batch_size = y_pred.size(0)
-		correct = y_pred.argmax(dim=1).eq(y).sum().item()
+		# correct = y_pred.argmax(dim=1).eq(y).sum().item()
+		correct = y_pred.sigmoid().ge(0.5).eq(y).sum().item()
 
 		pred_total += batch_size
 		correct_total += correct
-		# pred_correct += y_pred.sigmoid().ge(0.5).eq(y).sum().item()
 
 		acc = correct / batch_size
 		acc_avg = correct_total / pred_total
@@ -152,14 +153,22 @@ def main():
 	torch.random.manual_seed(42)
 	random.seed(42)
 
+	dataset_name = "Yelp/yelp_review_full"
 	tokenizer_name = "google-bert/bert-base-uncased"
+
 	tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 	pad = tokenizer.pad_token_id
 
-	dataset = yelp_dataset(tokenizer_name)
+	dataset = prepare_dataset(
+		dataset=dataset_name,
+		tokenizer=tokenizer_name,
+		tokenized_col="text",
+		selected_col=["label"],
+	)
+
 	train_loader = data.DataLoader(
 		dataset["train"],
-		batch_size=128,
+		batch_size=64,
 		shuffle=True,
 		collate_fn=partial(collate, pad=pad),
 	)
@@ -172,21 +181,21 @@ def main():
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	model = Classifier(
 		vocab_size=tokenizer.vocab_size,
-		embed_dim=64,
 		pad_idx=tokenizer.pad_token_id,
+		embed_dim=64,
 
-		encoder_throughput=[0.50, 0.25, 0.10],
+		encoder_throughput=[0.50, 0.50, 0.50],
 		encoder_heads_num=1,
 		encoder_fc_dim=128,
 
-		class_num=5,
+		class_num=1,
 	)
 
 	params = sum(p.numel() for p in model.parameters())
 	print("Prams", params, "Vocab", tokenizer.vocab_size)
 	model.to(device)
 
-	criterion = nn.CrossEntropyLoss()
+	criterion = nn.BCEWithLogitsLoss()
 	optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 	epochs = 10
