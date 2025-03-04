@@ -34,5 +34,5 @@ def yelp_dataset(
 		num_proc=num_proc,
 		batched=True,
 	)
-	ds = ds.select_columns(["tokens"])
+	ds = ds.select_columns(["tokens", "label"])
 	return ds
