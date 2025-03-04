@@ -1,48 +1,68 @@
+from dataclasses import dataclass, field
 from typing import Tuple, List
 
 import torch
 from torch import nn
 
 
+@dataclass
+class Gate:
+	stride: int = 0
+	batch: List[int] = field(default_factory=list)
+	x: List[int] = field(default_factory=list)
+	y: List[int] = field(default_factory=list)
+
+
 class AttentionGate(nn.Module):
-	def __init__(self, thresh: float):
+	def __init__(self, throughput: float):
 		super(AttentionGate, self).__init__()
-		self.thresh = thresh
+		self.throughput = throughput
 
 	def forward(
 		self,
+		pad: torch.Tensor,
 		attn: torch.Tensor,
-	) -> Tuple[
-		torch.Tensor,
-		torch.Tensor,
-	]:
-		x_gate = attn.sum(dim=1)
-		x_gate = x_gate.ge(self.thresh)
+	) -> Gate:
+		x_batch = attn.size(0)
+		x_len = (pad.size(1) - pad.sum(dim=1)).tolist()
+		gate = Gate()
 
-		sel_num = x_gate.sum(dim=1)
-		seq_len = sel_num.max().item()
+		for i in range(x_batch):
+			j = x_len[i]
+			k = max(1, int(j * self.throughput))
 
-		y_gate = torch.arange(seq_len, device=sel_num.device)
-		y_gate = y_gate.lt(sel_num.unsqueeze(1))
+			scores = attn[i, :j, :j].detach()
+			scores = scores.sum(dim=0).cpu()
 
-		return x_gate, y_gate
+			_, indices = scores.topk(k=k)
+			indices = indices.sort().values
+
+			gate.stride = max(gate.stride, k)
+			gate.batch += [i] * k
+			gate.x += indices.tolist()
+			gate.y += [i for i in range(k)]
+
+		return gate
 
 
 class GatedEncoderLayer(nn.Module):
 	def __init__(
 		self,
-		gate_thresh: float,
+		throughput: float,
 		embed_dim: int,
 		heads_num: int,
 		fc_dim: int,
 	):
 		super(GatedEncoderLayer, self).__init__()
+		if throughput < 0.0 or throughput > 1.0:
+			raise ValueError("The throughput should be between 0.0 and 1.0")
+
 		self.attention = nn.MultiheadAttention(
 			embed_dim=embed_dim,
 			num_heads=heads_num,
 			batch_first=True,
 		)
-		self.gate = AttentionGate(gate_thresh)
+		self.gate = AttentionGate(throughput)
 		self.norm1 = nn.LayerNorm(embed_dim)
 		self.norm2 = nn.LayerNorm(embed_dim)
 		self.ff = nn.Sequential(
@@ -73,24 +93,30 @@ class GatedEncoderLayer(nn.Module):
 			is_causal=False,
 		)
 
-		x_gate, y_gate = self.gate(attn)
-		y = torch.zeros(y_gate.size(0), y_gate.size(1), x.size(2), dtype=x.dtype, device=x.device)
-		y[y_gate] = x[x_gate]
+		gate = self.gate(
+			pad=src_pad,
+			attn=attn,
+		)
+
+		y = torch.zeros(x.size(0), gate.stride, x.size(2), dtype=x.dtype, device=x.device)
+		y[gate.batch, gate.y] = x[gate.batch, gate.x]
 
 		x = torch.zeros_like(y)
-		x[y_gate] = src[x_gate]
+		x[gate.batch, gate.y] = src[gate.batch, gate.x]
 
 		y = self.norm1(x + y)
 		y = self.norm2(y + self.ff(y))
 
-		y_pad = y_gate.logical_not()
+		y_pad = torch.ones(x.size(0), gate.stride, dtype=torch.bool, device=x.device)
+		y_pad[gate.batch, gate.y] = False
+
 		return y, y_pad
 
 
 class GatedEncoder(nn.Module):
 	def __init__(
 		self,
-		layer_tresh: List[float],
+		throughput: List[float],
 		embed_dim: int,
 		heads_num: int,
 		fc_dim: int,
@@ -98,12 +124,12 @@ class GatedEncoder(nn.Module):
 		super(GatedEncoder, self).__init__()
 		self.layers = nn.ModuleList([
 			GatedEncoderLayer(
-				gate_thresh=gate_thresh,
+				throughput=t,
 				embed_dim=embed_dim,
 				heads_num=heads_num,
 				fc_dim=fc_dim,
 			)
-			for gate_thresh in layer_tresh
+			for t in throughput
 		])
 
 	def forward(

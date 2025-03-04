@@ -1,3 +1,4 @@
+import csv
 import random
 from datetime import datetime
 from functools import partial
@@ -45,10 +46,12 @@ def ckpt_save(
 	torch.save(ckpt, path)
 
 
-def loss_save(path: Path, loss: List[float]):
-	with path.open("w") as f:
-		for i in loss:
-			f.write(f"{i}\n")
+def log_save(path: Path, log: List):
+	with path.open("w") as file:
+		header = log[0].keys()
+		writer = csv.DictWriter(file, fieldnames=header, delimiter="\t")
+		writer.writeheader()
+		writer.writerows(log)
 
 
 def epoch_pass(
@@ -72,8 +75,8 @@ def epoch_pass(
 		torch.set_grad_enabled(True)
 
 	loader_len = len(loader)
-	loss_history = [0] * loader_len
 	loss_total = 0
+	log = []
 
 	ckpt_freq = loader_len / ckpt_freq
 	ckpt_n = 0
@@ -84,7 +87,7 @@ def epoch_pass(
 		ckpt_dir.mkdir(parents=True)
 
 	bar = tqdm(desc=f"{desc} {epoch}", total=loader_len)
-	pred_correct = 0
+	correct_total = 0
 	pred_total = 0
 
 	for i, (x, x_pad, y) in enumerate(loader):
@@ -95,8 +98,7 @@ def epoch_pass(
 		if optimizer is not None:
 			optimizer.zero_grad()
 
-		y_pred, com_len = model(x, x_pad)
-		# y_pred = y_pred.squeeze(-1)
+		y_pred = model(x, x_pad)
 		loss = criterion(y_pred, y)
 
 		if optimizer is not None:
@@ -105,34 +107,38 @@ def epoch_pass(
 		torch.cuda.empty_cache()
 
 		loss = loss.item()
-		loss_history.append(loss)
 		loss_total += loss
 		loss_avg = loss_total / (i + 1)
+
+		batch_size = y_pred.size(0)
+		correct = y_pred.argmax(dim=1).eq(y).sum().item()
+
+		pred_total += batch_size
+		correct_total += correct
+		# pred_correct += y_pred.sigmoid().ge(0.5).eq(y).sum().item()
+
+		acc = correct / batch_size
+		acc_avg = correct_total / pred_total
+
+		log_ent = {
+			"acc": acc * 100,
+			"acc_": acc_avg * 100,
+			"loss": loss,
+			"loss_": loss_avg,
+		}
+		log.append(log_ent)
+
+		bar.set_postfix(**log_ent)
+		bar.update(1)
 
 		if ckpt_dir and (i + 1) >= round(ckpt_freq * (ckpt_n + 1)):
 			if not test:
 				ckpt_path = ckpt_dir / f"{ckpt_n}.pth"
 				ckpt_save(ckpt_path, model, optimizer)
 
-			loss_path = ckpt_dir / f"{epoch}.loss"
-			loss_save(loss_path, loss_history)
+			log_path = ckpt_dir / f"{epoch}.tsv"
+			log_save(log_path, log)
 			ckpt_n += 1
-
-		pred_total += y_pred.size(0)
-		# pred_correct += y_pred.sigmoid().ge(0.5).eq(y).sum().item()
-		pred_correct += y_pred.argmax(dim=1).eq(y).sum().item()
-		acc = pred_correct / pred_total
-
-		seq_len = x.size(1)
-		com = com_len / seq_len
-
-		bar.set_postfix(
-			avg_acc=f"{acc * 100:.2f}",
-			avg_los=f"{loss_avg:.4f}",
-			los=f"{loss:.4f}",
-			com=f"{com * 100:.2f}",
-		)
-		bar.update(1)
 	bar.close()
 
 
@@ -169,7 +175,7 @@ def main():
 		embed_dim=64,
 		pad_idx=tokenizer.pad_token_id,
 
-		encoder_layer_thresh=[0.75, 0.95, 1.00],
+		encoder_throughput=[0.50, 0.25, 0.10],
 		encoder_heads_num=1,
 		encoder_fc_dim=128,
 

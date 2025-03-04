@@ -13,7 +13,7 @@ class Classifier(nn.Module):
 		embed_dim: int,
 		pad_idx: int,
 
-		encoder_layer_thresh: List[float],
+		encoder_throughput: List[float],
 		encoder_heads_num: int,
 		encoder_fc_dim: int,
 
@@ -26,7 +26,7 @@ class Classifier(nn.Module):
 			padding_idx=pad_idx,
 		)
 		self.encoder = GatedEncoder(
-			layer_tresh=encoder_layer_thresh,
+			throughput=encoder_throughput,
 			embed_dim=embed_dim,
 			heads_num=encoder_heads_num,
 			fc_dim=encoder_fc_dim,
@@ -46,10 +46,8 @@ class Classifier(nn.Module):
 	]:
 		x = self.embedding(src)
 		x, x_pad = self.encoder(x, src_pad)
-		seq_len = x.size(1)
 
-		# x = x.sum(dim=1) / x_pad.sum(dim=1, keepdim=True)
 		x = x[:, 0]
 		x = self.classifier(x)
 
-		return x, seq_len
+		return x
