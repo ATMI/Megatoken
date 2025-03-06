@@ -13,10 +13,39 @@ class Gate:
 	y: List[int] = field(default_factory=list)
 
 
+class TopKGate(nn.Module):
+	def __init__(self, k: float) -> None:
+		super(TopKGate, self).__init__()
+		self.k = k
+
+	def forward(self, x: torch.Tensor) -> torch.Tensor:
+		j = x.size(0)
+		k = max(1, int(j * self.throughput))
+
+		_, indices = x.topk(k=k)
+		indices = indices.sort().values
+
+		return indices
+
+
+class ThreshGate(nn.Module):
+	def __init__(self, thresh: float) -> None:
+		super(ThreshGate, self).__init__()
+		self.thresh = thresh
+
+	def forward(self, x: torch.Tensor) -> torch.Tensor:
+		indices = (x > self.thresh).nonzero()
+		indices = indices.flatten()
+		return indices
+
+
 class AttentionGate(nn.Module):
-	def __init__(self, throughput: float):
+	def __init__(
+		self,
+		condition: nn.Module,
+	):
 		super(AttentionGate, self).__init__()
-		self.throughput = throughput
+		self.condition = condition
 
 	def forward(
 		self,
@@ -29,13 +58,12 @@ class AttentionGate(nn.Module):
 
 		for i in range(x_batch):
 			j = x_len[i]
-			k = max(1, int(j * self.throughput))
 
 			scores = attn[i, :j, :j].detach()
 			scores = scores.sum(dim=0).cpu()
 
-			_, indices = scores.topk(k=k)
-			indices = indices.sort().values
+			indices = self.condition(scores)
+			k = indices.size(0)
 
 			gate.stride = max(gate.stride, k)
 			gate.batch += [i] * k
@@ -48,21 +76,18 @@ class AttentionGate(nn.Module):
 class GatedEncoderLayer(nn.Module):
 	def __init__(
 		self,
-		throughput: float,
+		condition: nn.Module,
 		embed_dim: int,
 		heads_num: int,
 		fc_dim: int,
 	):
 		super(GatedEncoderLayer, self).__init__()
-		if throughput < 0.0 or throughput > 1.0:
-			raise ValueError("The throughput should be between 0.0 and 1.0")
-
 		self.attention = nn.MultiheadAttention(
 			embed_dim=embed_dim,
 			num_heads=heads_num,
 			batch_first=True,
 		)
-		self.gate = AttentionGate(throughput)
+		self.gate = AttentionGate(condition)
 		self.norm1 = nn.LayerNorm(embed_dim)
 		self.norm2 = nn.LayerNorm(embed_dim)
 		self.ff = nn.Sequential(
@@ -116,7 +141,7 @@ class GatedEncoderLayer(nn.Module):
 class GatedEncoder(nn.Module):
 	def __init__(
 		self,
-		throughput: List[float],
+		gates: List[nn.Module],
 		embed_dim: int,
 		heads_num: int,
 		fc_dim: int,
@@ -124,12 +149,12 @@ class GatedEncoder(nn.Module):
 		super(GatedEncoder, self).__init__()
 		self.layers = nn.ModuleList([
 			GatedEncoderLayer(
-				throughput=t,
+				condition=condition,
 				embed_dim=embed_dim,
 				heads_num=heads_num,
 				fc_dim=fc_dim,
 			)
-			for t in throughput
+			for condition in gates
 		])
 
 	def forward(

@@ -13,7 +13,7 @@ class Classifier(nn.Module):
 		embed_dim: int,
 		pad_idx: int,
 
-		encoder_throughput: List[float],
+		encoder_gates: List[nn.Module],
 		encoder_heads_num: int,
 		encoder_fc_dim: int,
 
@@ -26,7 +26,7 @@ class Classifier(nn.Module):
 			padding_idx=pad_idx,
 		)
 		# self.encoder = GatedEncoder(
-		# 	throughput=encoder_throughput,
+		# 	gates=encoder_gates,
 		# 	embed_dim=embed_dim,
 		# 	heads_num=encoder_heads_num,
 		# 	fc_dim=encoder_fc_dim,
@@ -38,7 +38,7 @@ class Classifier(nn.Module):
 				dim_feedforward=encoder_fc_dim,
 				batch_first=True,
 			),
-			num_layers=len(encoder_throughput),
+			num_layers=len(encoder_gates),
 		)
 		self.classifier = nn.Sequential(
 			nn.Dropout(),
@@ -51,12 +51,18 @@ class Classifier(nn.Module):
 		src_pad: torch.Tensor,
 	) -> Tuple[
 		torch.Tensor,
-		int,
+		float,
 	]:
 		x = self.embedding(src)
+		# x, x_pad = self.encoder(x, src_pad)
 		x = self.encoder(x, None, src_pad, False)
 
 		x = x[:, 0]
 		x = self.classifier(x)
 
-		return x
+		# src_len = src_pad.size(1) - src_pad.sum(dim=1)
+		# x_len = x_pad.size(1) - x_pad.sum(dim=1)
+		# ratio = (x_len / src_len).mean(dim=0).item()
+		ratio = 1.0
+
+		return x, ratio

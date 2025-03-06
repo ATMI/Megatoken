@@ -14,6 +14,7 @@ from transformers import AutoTokenizer
 
 from classifier import Classifier
 from dataset import prepare_dataset
+from encoder import ThreshGate
 
 
 def collate(batch, pad):
@@ -98,7 +99,7 @@ def epoch_pass(
 		if optimizer is not None:
 			optimizer.zero_grad()
 
-		y_pred = model(x, x_pad)
+		y_pred, ratio = model(x, x_pad)
 		y_pred = y_pred.squeeze(-1)
 		loss = criterion(y_pred, y)
 
@@ -122,6 +123,7 @@ def epoch_pass(
 		acc_avg = correct_total / pred_total
 
 		log_ent = {
+			"ratio": ratio,
 			"acc": acc * 100,
 			"acc_": acc_avg * 100,
 			"loss": loss,
@@ -184,7 +186,11 @@ def main():
 		pad_idx=tokenizer.pad_token_id,
 		embed_dim=64,
 
-		encoder_throughput=[0.50, 0.50, 0.50],
+		encoder_gates=[
+			ThreshGate(0.68),
+			ThreshGate(0.95),
+			ThreshGate(0.99),
+		],
 		encoder_heads_num=1,
 		encoder_fc_dim=128,
 

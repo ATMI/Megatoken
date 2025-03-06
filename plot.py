@@ -18,21 +18,26 @@ def log_load(path: Path):
 
 
 def main():
-	path_a = Path("checkpoint/0304_2010/train/0/0.tsv")
-	path_b = Path("checkpoint/0304_2032/train/0/0.tsv")
+	prop = "acc_"
+	# prop = "ratio"
+	paths = [
+		# "checkpoint/0305_1128/train/0/0.tsv",
 
-	data_a = log_load(path_a)
-	data_b = log_load(path_b)
-
-	y_a = data_a["acc_"]
-	y_b = data_b["acc_"]
-
-	x_a = [i for i in range(len(y_a))]
-	x_b = [i for i in range(len(y_b))]
+		("checkpoint/0305_1514/train/0/0.tsv", "vanilla"), # Vanilla
+		("checkpoint/0305_1452/train/0/0.tsv", "0.68 0.95 0.99"), # 0.68 0.95 0.99
+	]
 
 	plt.figure()
-	plt.plot(x_a, y_a)
-	plt.plot(x_b, y_b)
+	for path, label in paths:
+		path = Path(path)
+		data = log_load(path)
+
+		y = data[prop] #[1000:]
+		x = [i for i in range(len(y))]
+
+		plt.plot(x, y, label=label)
+
+	plt.legend(loc="best")
 	plt.show()
 
 
