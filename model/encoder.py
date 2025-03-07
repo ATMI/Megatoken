@@ -5,27 +5,27 @@ from torch import nn, Tensor
 from torch.nn import ModuleList
 
 
-def _get_clones(module, N):
-	return ModuleList([copy.deepcopy(module) for _ in range(N)])
+# TODO Rotary Embeds
 
-
-class Encoder(nn.Module):
+class RotaryEncoder(nn.Module):
 	def __init__(
 			self,
 			encoder_layer,
 			num_layers,
 			norm: Optional[nn.Module] = None
 	):
-		super(Encoder, self).__init__()
-		self.layers = _get_clones(encoder_layer, num_layers)
+		super(RotaryEncoder, self).__init__()
+		self.layers = ModuleList([
+			copy.deepcopy(encoder_layer)
+			for _ in range(num_layers)
+		])
 		self.norm = norm
-
 
 	def forward(
 			self,
 			x,
-			mask = None,
-			src_key_padding_mask = None,
+			mask=None,
+			src_key_padding_mask=None,
 	) -> Tensor:
 		for layer in self.layers:
 			x = layer(
