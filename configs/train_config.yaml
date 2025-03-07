@@ -1,0 +1,8 @@
+batch_size: 512
+num_epochs: 10
+
+Adam:
+  lr: 1e-4
+  b1: 0.9
+  b2: 0.98
+  weight_decay: 0.01
