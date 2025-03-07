@@ -1,82 +1,72 @@
-from dataclasses import dataclass, field
-from typing import Tuple, List
+from typing import Tuple
 
 import torch
 from torch import nn
 
 
-@dataclass
-class Gate:
-	stride: int = 0
-	batch: List[int] = field(default_factory=list)
-	x: List[int] = field(default_factory=list)
-	y: List[int] = field(default_factory=list)
-
-
-class TopKGate(nn.Module):
-	def __init__(self, k: float) -> None:
-		super(TopKGate, self).__init__()
-		self.k = k
-
-	def forward(self, x: torch.Tensor) -> torch.Tensor:
-		j = x.size(0)
-		k = max(1, int(j * self.throughput))
-
-		_, indices = x.topk(k=k)
-		indices = indices.sort().values
-
-		return indices
-
-
-class ThreshGate(nn.Module):
-	def __init__(self, thresh: float) -> None:
-		super(ThreshGate, self).__init__()
-		self.thresh = thresh
-
-	def forward(self, x: torch.Tensor) -> torch.Tensor:
-		indices = (x > self.thresh).nonzero()
-		indices = indices.flatten()
-		return indices
-
-
-class AttentionGate(nn.Module):
+class SoftGate(nn.Module):
 	def __init__(
 		self,
-		condition: nn.Module,
-	):
-		super(AttentionGate, self).__init__()
-		self.condition = condition
+		embed_dim: int,
+	) -> None:
+		super(SoftGate, self).__init__()
+		bottleneck_dim = max(2, embed_dim // 2)
+		self.threshold = 1e-1
+		self.fc = nn.Sequential(
+			nn.Linear(embed_dim, bottleneck_dim),
+			nn.ReLU(),
+			nn.Linear(bottleneck_dim, 1),
+		)
 
 	def forward(
 		self,
+		x: torch.Tensor,
 		pad: torch.Tensor,
-		attn: torch.Tensor,
-	) -> Gate:
-		x_batch = attn.size(0)
-		x_len = (pad.size(1) - pad.sum(dim=1)).tolist()
-		gate = Gate()
+	) -> Tuple[
+		torch.Tensor,
+		torch.Tensor,
+	]:
+		batch = x.size(0)
+		length = pad.size(1) - pad.sum(dim=1)
+		stride = length.max().item()
 
-		for i in range(x_batch):
-			j = x_len[i]
+		y = self.fc(x)
+		y = (1 + torch.tanh(10 * y)) / 2
 
-			scores = attn[i, :j, :j].detach()
-			scores = scores.sum(dim=0).cpu()
+		for i in range(batch):
+			n = length[i].item()
+			if n == stride:
+				continue
+			y[i, n:] = 0
 
-			indices = self.condition(scores)
-			k = indices.size(0)
+		adjust = 1e-5 + self.threshold
+		adjust = adjust - y.max(dim=1).values
+		adjust = adjust.clamp(min=0).unsqueeze(dim=-1)
 
-			gate.stride = max(gate.stride, k)
-			gate.batch += [i] * k
-			gate.x += indices.tolist()
-			gate.y += [i for i in range(k)]
+		y = y + adjust
+		u = x * y
+		y = y.squeeze(dim=-1)
 
-		return gate
+		u_mask = (y > self.threshold) & (~pad)
+		length = u_mask.sum(dim=1)
+		stride = length.max().item()
+
+		size = list(u.size())
+		size[1] = stride
+
+		v = torch.zeros(size, dtype=u.dtype, device=u.device)
+		v_mask = torch.arange(stride, device=u.device)
+		v_mask = v_mask < length.unsqueeze(dim=-1)
+
+		v[v_mask] = u[u_mask]
+		v_pad = ~v_mask
+
+		return v, v_pad
 
 
 class GatedEncoderLayer(nn.Module):
 	def __init__(
 		self,
-		condition: nn.Module,
 		embed_dim: int,
 		heads_num: int,
 		fc_dim: int,
@@ -87,7 +77,7 @@ class GatedEncoderLayer(nn.Module):
 			num_heads=heads_num,
 			batch_first=True,
 		)
-		self.gate = AttentionGate(condition)
+		self.gate = SoftGate(embed_dim)
 		self.norm1 = nn.LayerNorm(embed_dim)
 		self.norm2 = nn.LayerNorm(embed_dim)
 		self.ff = nn.Sequential(
@@ -101,39 +91,26 @@ class GatedEncoderLayer(nn.Module):
 
 	def forward(
 		self,
-		src: torch.Tensor,
-		src_pad: torch.Tensor,
+		x: torch.Tensor,
+		pad: torch.Tensor,
 	) -> Tuple[
 		torch.Tensor,
 		torch.Tensor,
 	]:
-		x, attn = self.attention(
-			query=src,
-			key=src,
-			value=src,
-			key_padding_mask=src_pad,
-			need_weights=True,
+		y, attn = self.attention(
+			query=x,
+			key=x,
+			value=x,
+			key_padding_mask=pad,
+			need_weights=False,
 			attn_mask=None,
-			average_attn_weights=True,
+			average_attn_weights=False,
 			is_causal=False,
 		)
 
-		gate = self.gate(
-			pad=src_pad,
-			attn=attn,
-		)
-
-		y = torch.zeros(x.size(0), gate.stride, x.size(2), dtype=x.dtype, device=x.device)
-		y[gate.batch, gate.y] = x[gate.batch, gate.x]
-
-		x = torch.zeros_like(y)
-		x[gate.batch, gate.y] = src[gate.batch, gate.x]
-
-		y = self.norm1(x + y)
+		y = self.norm1(y + x)
 		y = self.norm2(y + self.ff(y))
-
-		y_pad = torch.ones(x.size(0), gate.stride, dtype=torch.bool, device=x.device)
-		y_pad[gate.batch, gate.y] = False
+		y, y_pad = self.gate(y, pad)
 
 		return y, y_pad
 
@@ -141,7 +118,7 @@ class GatedEncoderLayer(nn.Module):
 class GatedEncoder(nn.Module):
 	def __init__(
 		self,
-		gates: List[nn.Module],
+		gates_num: int,
 		embed_dim: int,
 		heads_num: int,
 		fc_dim: int,
@@ -149,12 +126,11 @@ class GatedEncoder(nn.Module):
 		super(GatedEncoder, self).__init__()
 		self.layers = nn.ModuleList([
 			GatedEncoderLayer(
-				condition=condition,
 				embed_dim=embed_dim,
 				heads_num=heads_num,
 				fc_dim=fc_dim,
 			)
-			for condition in gates
+			for _ in range(gates_num)
 		])
 
 	def forward(
@@ -165,3 +141,26 @@ class GatedEncoder(nn.Module):
 		for layer in self.layers:
 			src, src_pad = layer(src, src_pad)
 		return src, src_pad
+
+
+def main():
+	torch.autograd.set_detect_anomaly(True)
+
+	encoder = GatedEncoder(
+		gates_num=4,
+		embed_dim=16,
+		heads_num=4,
+		fc_dim=16,
+	)
+
+	x = torch.randn(8, 10, 16, requires_grad=True)
+	pad = torch.zeros(8, 10, dtype=torch.bool)
+
+	y, _ = encoder(x, pad)
+	y.sum().backward()
+
+	print(x.grad)
+
+
+if __name__ == "__main__":
+	main()

@@ -14,8 +14,8 @@ from transformers import AutoTokenizer
 
 from classifier import Classifier
 from dataset import prepare_dataset
-from encoder import ThreshGate
 
+# torch.autograd.set_detect_anomaly(True)
 
 def collate(batch, pad):
 	y = torch.tensor([x["label"] >= 3 for x in batch], dtype=torch.float)
@@ -99,9 +99,9 @@ def epoch_pass(
 		if optimizer is not None:
 			optimizer.zero_grad()
 
-		y_pred, ratio = model(x, x_pad)
+		y_pred, z, ratio = model(x, x_pad)
 		y_pred = y_pred.squeeze(-1)
-		loss = criterion(y_pred, y)
+		loss = criterion(y_pred, y) + z
 
 		if optimizer is not None:
 			loss.backward()
@@ -170,7 +170,7 @@ def main():
 
 	train_loader = data.DataLoader(
 		dataset["train"],
-		batch_size=64,
+		batch_size=32,
 		shuffle=True,
 		collate_fn=partial(collate, pad=pad),
 	)
@@ -186,11 +186,7 @@ def main():
 		pad_idx=tokenizer.pad_token_id,
 		embed_dim=64,
 
-		encoder_gates=[
-			ThreshGate(0.68),
-			ThreshGate(0.95),
-			ThreshGate(0.99),
-		],
+		encoder_gates_num=3,
 		encoder_heads_num=1,
 		encoder_fc_dim=128,
 

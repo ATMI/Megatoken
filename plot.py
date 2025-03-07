@@ -18,13 +18,13 @@ def log_load(path: Path):
 
 
 def main():
-	prop = "acc_"
-	# prop = "ratio"
+	# prop = "acc_"
+	prop = "ratio"
 	paths = [
 		# "checkpoint/0305_1128/train/0/0.tsv",
 
-		("checkpoint/0305_1514/train/0/0.tsv", "vanilla"), # Vanilla
-		("checkpoint/0305_1452/train/0/0.tsv", "0.68 0.95 0.99"), # 0.68 0.95 0.99
+		# ("checkpoint/0306_2030/train/0/0.tsv", "A"),
+		("checkpoint/0306_2143/train/0/0.tsv", "B"),
 	]
 
 	plt.figure()
