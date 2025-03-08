@@ -1,4 +1,4 @@
-from typing import Type
+from typing import Type, Tuple
 
 import torch
 from torch import nn
@@ -35,7 +35,7 @@ class coBERT(nn.Module):
 			embed_dim=cfg.embed_dim
 		)
 
-		self.embedding = nn.Embedding(
+		self.embeddings = nn.Embedding(
 			num_embeddings=vocab_size,
 			embedding_dim=cfg.embed_dim,
 			padding_idx=pad_idx,
@@ -69,16 +69,19 @@ class coBERT(nn.Module):
 			self,
 			seq,
 			seq_pad_mask=None,
-			tgt_mask=None,
-	):
+			seq_mask=None,
+	) -> Tuple[
+		torch.Tensor,
+		torch.Tensor,
+		float
+	]:
 		r"""
 
 		:param seq: Input Sequence
 		:param seq_pad_mask: Padding mask of initial sequence
-		:param tgt_mask: Attention mask of target sequence in decoder (self-attention)
-		:return:
+		:param seq_mask: Attention mask of target sequence in decoder (self-attention)
+		:return: Tuple | (compressed_seq, pred_seq, compression_ratio)
 		"""
-
 		_pos_seq = self.pos_enc(seq)
 
 		enc_seq = self.encoder(
@@ -92,13 +95,18 @@ class coBERT(nn.Module):
 		out = self.decoder(
 			seq,
 			comp_seq,
-			tgt_mask=tgt_mask,
+			tgt_mask=seq_mask,
 			tgt_key_padding_mask=seq_pad_mask,
 			memory_key_padding_mask=comp_pad_mask,
 			tgt_is_causal=True,
 		)
 
-		return out
+		# Compute compression ratio
+		src_len = seq_pad_mask.size(1) - seq_pad_mask.sum(dim=1)
+		comp_len = comp_pad_mask.size(1) - comp_pad_mask.sum(dim=1)
+		ratio = (comp_len / src_len).mean(dim=0).item()
+
+		return comp_seq, out, ratio
 
 
 
@@ -115,6 +123,6 @@ if __name__ == "__main__":
 	x = torch.rand(10, 32, cfg.embed_dim)
 	padding_mask = torch.randint(0, 2, (10, 32)).bool()
 	mask = nn.Transformer.generate_square_subsequent_mask(x.size(1), dtype=torch.bool)
-	out = model.forward(x, tgt_mask=mask, seq_pad_mask=padding_mask)
+	z, out, ratio = model.forward(x, seq_mask=mask, seq_pad_mask=padding_mask)
 	print(out.shape)
 
