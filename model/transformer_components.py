@@ -1,11 +1,36 @@
-import copy
-from typing import Optional, Union, Callable, Tuple
+import math
+from typing import Optional, Tuple
 
 import torch
-from nltk import pos_tag
 from torch import nn, Tensor
-from torch.nn import ModuleList
 import torch.nn.functional as F
+
+
+class AbsolutePositionalEncoding(nn.Module):
+	def __init__(
+			self,
+			d_model: int,
+			dropout: float = 0.1,
+			max_len: int = 5000
+	):
+		super().__init__()
+		self.dropout = nn.Dropout(p=dropout)
+
+		position = torch.arange(max_len).unsqueeze(1)
+		div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+		pe = torch.zeros(1, max_len, d_model)
+		pe[0, :, 0::2] = torch.sin(position * div_term)
+		pe[0, :, 1::2] = torch.cos(position * div_term)
+		self.register_buffer('pe', pe)
+
+	def forward(self, x: Tensor) -> Tensor:
+		"""
+		Arguments:
+			x: Tensor, shape ``[batch_size, seq_len, embedding_dim]``
+		"""
+		x = x + self.pe[:, :x.size(1)]
+		return self.dropout(x)
+
 
 
 # FIXME: change batch-size dim
@@ -59,8 +84,8 @@ def apply_rotary_emb(
 	xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
 	xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
 	freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
-	xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
-	xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
+	xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(2)
+	xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(2)
 	return xq_out.type_as(xq), xk_out.type_as(xk)
 
 
@@ -87,7 +112,6 @@ def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
 	return freqs_cis
 
 
-
 class RotaryEncoderLayer(nn.TransformerEncoderLayer):
 	def __init__(
 			self,
@@ -106,7 +130,7 @@ class RotaryEncoderLayer(nn.TransformerEncoderLayer):
 			activation=F.gelu,
 		)
 		# Limiting the context length to precompute the rotary embeddings
-		token_limit = 32
+		token_limit = 1024
 		self.pos_encodings = precompute_freqs_cis(d_model // nhead, token_limit)
 
 	def _sa_block(
@@ -116,12 +140,13 @@ class RotaryEncoderLayer(nn.TransformerEncoderLayer):
 			key_padding_mask: Optional[Tensor],
 			is_causal: bool = False,
 	) -> Tensor:
-		# qx, kx = apply_rotary_emb(x, x, self.pos_encodings)
-		# vx = x
+		seq_len = x.size(1)  # FIXME: Works only for batch_first=True
+		freqs_cis = self.pos_encodings[:seq_len]
+		qx, kx = apply_rotary_emb(x, x, freqs_cis)
 
 		x = self.self_attn(
-			x,
-			x,
+			qx,
+			kx,
 			x,
 			attn_mask=attn_mask,
 			key_padding_mask=key_padding_mask,
