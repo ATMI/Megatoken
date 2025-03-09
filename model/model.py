@@ -74,7 +74,6 @@ class coBERT(nn.Module):
 			seq_mask=None,
 	) -> Tuple[
 		torch.Tensor,
-		torch.Tensor,
 		float
 	]:
 		r"""
@@ -82,9 +81,9 @@ class coBERT(nn.Module):
 		:param seq: Input Sequence
 		:param seq_pad_mask: Padding mask of initial sequence
 		:param seq_mask: Attention mask of target sequence in decoder (self-attention)
-		:return: Tuple | (compressed_seq, pred_seq, compression_ratio)
+		:return: Tuple | (pred_seq, compression_ratio)
 		"""
-		# x = self.embeddings(seq)
+		x = self.embeddings(seq)
 		_pos_seq = self.pos_enc(x)
 
 		comp_seq, comp_pad_mask, ratio = self.encoder(
@@ -102,7 +101,7 @@ class coBERT(nn.Module):
 		)
 
 		out = self.classifier(out)
-		return comp_seq, out, ratio
+		return out, ratio
 
 
 if __name__ == "__main__":

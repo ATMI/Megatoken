@@ -10,7 +10,7 @@ from torch import nn, optim
 from torch.nn.utils import rnn
 from torch.utils import data
 from tqdm import tqdm
-from transformers import AutoTokenizer, DataCollatorForLanguageModeling
+from transformers import AutoTokenizer
 
 from classifier import Classifier
 from dataset import prepare_dataset
@@ -20,10 +20,11 @@ from dataset import prepare_dataset
 
 
 def masking(
-		x,
-		pad_mask,
-		mask_token_id=999,
-		mask_prob=0.15
+		x: torch.Tensor,
+		pad_mask: torch.Tensor,
+		mask_token_id: int = 999,
+		mask_prob: float = 0.15,
+		device: torch.device = torch.cpu,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
 	"""
 	Randomly mask tokens in the sequence.
@@ -33,6 +34,7 @@ def masking(
 	:param pad_mask: Padding mask, [batch_size, seq_len]. True = pad token
 	:param mask_token_id: Mask token id
 	:param mask_prob: Percentage of tokens to mask
+	:param device: Device
 	:return: Masked inputs, labels
 	"""
 	x_len = pad_mask.size(1) - pad_mask.sum(dim=1)
@@ -49,14 +51,14 @@ def masking(
 	masked_input = x.clone()
 	masked_input[mask] = mask_token_id
 
-	labels = torch.full_like(x, fill_value=-100)  # -100 = ignore index
+	labels = torch.full_like(x, fill_value=-100, device=device)  # -100 = ignore index for CrossEntropyLoss
 	labels[mask] = x[mask]
 
 	return masked_input, labels
 
 
 def collate(batch, pad):
-	y = torch.tensor([x["label"] >= 3 for x in batch], dtype=torch.float)
+	# y = torch.tensor([x["label"] >= 3 for x in batch], dtype=torch.float)
 	# y = torch.tensor([x["label"] for x in batch], dtype=torch.float)
 	x = [torch.tensor(x["tokens"]) for x in batch]
 	x = rnn.pad_sequence(x, batch_first=True, padding_value=pad)
@@ -70,7 +72,7 @@ def collate(batch, pad):
 		length = len(tokens)
 		x_pad[i, :length] = False
 
-	return x, x_pad, y
+	return x, x_pad
 
 
 def ckpt_save(
@@ -129,17 +131,18 @@ def epoch_pass(
 	correct_total = 0
 	pred_total = 0
 
-	for i, (x, x_pad, y) in enumerate(loader):
+	for i, (x, x_pad) in enumerate(loader):
 		x = x.to(device)
-		y = y.to(device)
 		x_pad = x_pad.to(device)
+
+		x, y = masking(x, x_pad, device=device)
 
 		if optimizer is not None:
 			optimizer.zero_grad()
 
-		y_pred, z, ratio = model(x, x_pad)
+		y_pred, ratio = model(x, x_pad)
 		y_pred = y_pred.squeeze(-1)
-		loss = criterion(y_pred, y) + z
+		loss = criterion(y_pred, y)
 
 		if optimizer is not None:
 			loss.backward()
@@ -150,14 +153,14 @@ def epoch_pass(
 		loss_total += loss
 		loss_avg = loss_total / (i + 1)
 
-		batch_size = y_pred.size(0)
-		# correct = y_pred.argmax(dim=1).eq(y).sum().item()
-		correct = y_pred.sigmoid().ge(0.5).eq(y).sum().item()
+		pred = y_pred.argmax(dim=-1)
+		correct = (pred == y).sum().item()
+		num_labels = (y != -100).sum().item()  # Number of tokens to predict
 
-		pred_total += batch_size
+		pred_total += num_labels
 		correct_total += correct
 
-		acc = correct / batch_size
+		acc = correct / num_labels
 		acc_avg = correct_total / pred_total
 
 		log_ent = {
@@ -247,4 +250,17 @@ def main():
 
 
 if __name__ == "__main__":
-	main()
+	y_pred = torch.tensor([
+		[999, 0, 0],
+		[0, 999, 0],
+		[0, 0, 999],
+	])
+	y = torch.tensor([-100, 1, -100])
+
+	pred = y_pred.argmax(dim=-1)
+	print(pred)
+
+	mask = (y != -100)
+	correct = ((pred == y) & mask).sum().item()
+	print((pred == y) & mask)
+	print(pred == y)
