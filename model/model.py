@@ -6,14 +6,14 @@ import torch.nn.functional as F
 
 from encoder import SoftGate
 from utils.config import load_config
-from transformer_components import RotaryEncoderLayer, RotaryDecoderLayer, AbsolutePositionalEncoding
+from transformer_components import GatedEncoder, GatedEncoderLayer, AbsolutePositionalEncoding
 
 
 class coBERT(nn.Module):
 	def __init__(
 			self,
 			cfg,
-			c_gate: Type,
+			c_gate: nn.Module,
 			vocab_size: int,
 			pad_idx: int,
 	):
@@ -30,25 +30,22 @@ class coBERT(nn.Module):
 
 		self.pos_enc = AbsolutePositionalEncoding(cfg.embed_dim)
 
-		# FIXME passing uninitialized class might be bad practice
-		self.gate = c_gate(
-			embed_dim=cfg.embed_dim
-		)
-
 		self.embeddings = nn.Embedding(
 			num_embeddings=vocab_size,
 			embedding_dim=cfg.embed_dim,
 			padding_idx=pad_idx,
 		)
 
-		self.encoder = nn.TransformerEncoder(
-			encoder_layer=nn.TransformerEncoderLayer(
+
+		self.encoder = GatedEncoder(
+			encoder_layer=GatedEncoderLayer(
 				d_model=cfg.embed_dim,
 				nhead=cfg.encoder.n_head,
+				comp_gate = c_gate,
 				dim_feedforward=cfg.encoder.dim_fc,
 				dropout=cfg.encoder.dropout,
-				batch_first=cfg.batch_first,
 				activation=F.gelu,
+				batch_first=cfg.batch_first,
 			),
 			num_layers=cfg.encoder.num_layers,
 		)
@@ -82,16 +79,14 @@ class coBERT(nn.Module):
 		:param seq_mask: Attention mask of target sequence in decoder (self-attention)
 		:return: Tuple | (compressed_seq, pred_seq, compression_ratio)
 		"""
-		_pos_seq = self.pos_enc(seq)
+		# x = self.embeddings(seq)
+		_pos_seq = self.pos_enc(x)
 
-		enc_seq = self.encoder(
+		comp_seq, comp_pad_mask, ratio = self.encoder(
 			_pos_seq,
 			src_key_padding_mask=seq_pad_mask,
 		)
 
-		comp_seq, comp_pad_mask = self.gate(enc_seq, seq_pad_mask)
-
-		# TODO read again about causal mask
 		out = self.decoder(
 			seq,
 			comp_seq,
@@ -101,21 +96,19 @@ class coBERT(nn.Module):
 			tgt_is_causal=True,
 		)
 
-		# Compute compression ratio
-		src_len = seq_pad_mask.size(1) - seq_pad_mask.sum(dim=1)
-		comp_len = comp_pad_mask.size(1) - comp_pad_mask.sum(dim=1)
-		ratio = (comp_len / src_len).mean(dim=0).item()
-
 		return comp_seq, out, ratio
-
 
 
 if __name__ == "__main__":
 	cfg = load_config("../configs/test.yaml")
 
+	gate = SoftGate(
+		embed_dim=cfg.embed_dim,
+	)
+
 	model = coBERT(
 		cfg=cfg,
-		c_gate=SoftGate,
+		c_gate=gate,
 		vocab_size=100,
 		pad_idx=1,
 	)
@@ -125,4 +118,3 @@ if __name__ == "__main__":
 	mask = nn.Transformer.generate_square_subsequent_mask(x.size(1), dtype=torch.bool)
 	z, out, ratio = model.forward(x, seq_mask=mask, seq_pad_mask=padding_mask)
 	print(out.shape)
-
