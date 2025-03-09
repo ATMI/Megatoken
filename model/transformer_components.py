@@ -1,5 +1,6 @@
+import copy
 import math
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union, Callable
 
 import torch
 from torch import nn, Tensor
@@ -30,6 +31,143 @@ class AbsolutePositionalEncoding(nn.Module):
 		"""
 		x = x + self.pe[:, :x.size(1)]
 		return self.dropout(x)
+
+
+class GatedEncoder(nn.Module):
+	def __init__(
+			self,
+			encoder_layer: "GatedEncoderLayer",
+			num_layers: int,
+			norm: Optional[nn.Module] = None,
+			mask_check: bool = True,
+	):
+		super().__init__()
+
+		self.norm = norm
+		self.num_layers = num_layers
+
+		self.layers = nn.ModuleList([
+			copy.deepcopy(encoder_layer)
+			for _ in range(num_layers)
+		])
+
+	def compression_ratio(
+			self,
+			src_pad: Tensor,
+			comp_pad: Tensor
+	) -> float:
+		"""
+		Calculates the compression ratio of gate.
+		:param src_pad: Pad mask of initial sequence
+		:param comp_pad: Pad mask of compressed sequence
+		:return: Compression ratio
+		"""
+		src_len = src_pad.size(1) - src_pad.sum(dim=1)
+		comp_len = comp_pad.size(1) - comp_pad.sum(dim=1)
+		ratio = (comp_len / src_len).mean(dim=0).item()
+		return ratio
+
+	def forward(
+			self,
+			src: Tensor,
+			mask: Optional[Tensor] = None,
+			src_key_padding_mask: Optional[Tensor] = None,
+			is_causal: Optional[bool] = None,
+	) -> Tuple[Tensor, Tensor, Tensor]:
+		"""
+
+		:param src: Input sequence
+		:param mask: Attention mask
+		:param src_key_padding_mask: Padding mask
+		:param is_causal: Hint to apply attention mask
+		:return: Tuple | (Compressed_Seq, Pad_Mask, Comp. ratios of N layers)
+		"""
+		output = src
+		pad_mask = src_key_padding_mask
+
+		# Tensor with mean compression ratio for each layer
+		comp_ratios = torch.zeros(self.num_layers, dtype=torch.float)
+
+		for l_num, layer in enumerate(self.layers):
+			comp_out, comp_pad_mask = layer(
+				output,
+				src_mask=mask,
+				is_causal=is_causal,
+				src_key_padding_mask=pad_mask,
+			)
+
+			ratio = self.compression_ratio(pad_mask, comp_pad_mask)
+			comp_ratios[l_num] = ratio
+
+			pad_mask = comp_pad_mask
+			output = comp_out
+
+		if self.norm is not None:
+			output = self.norm(output)
+
+		return output, pad_mask, comp_ratios
+
+
+
+
+
+
+class GatedEncoderLayer(nn.TransformerEncoderLayer):
+	def __init__(
+			self,
+			d_model: int,
+			nhead: int,
+			comp_gate,
+			dim_feedforward: int = 2048,
+			dropout: float = 0.1,
+			activation: Union[str, Callable[[Tensor], Tensor]] = F.relu,
+			batch_first: bool = True,
+	):
+		super().__init__(
+			d_model=d_model,
+			nhead=nhead,
+			dim_feedforward=dim_feedforward,
+			dropout=dropout,
+			activation=activation,
+			batch_first=batch_first,
+		)
+		self.gate_layer = comp_gate
+
+	def forward(
+			self,
+			src: Tensor,
+			src_mask: Optional[Tensor] = None,
+			src_key_padding_mask: Optional[Tensor] = None,
+			is_causal: bool = False,
+	) -> Tuple[Tensor, Tensor]:
+		"""
+		Forward pass. Calling default TransformerEncoderLayer forward pass
+		and apply compression gate after.
+		:param src: Input sequence
+		:param src_mask: Attention mask
+		:param src_key_padding_mask: Padding mask
+		:param is_causal: Hint to apply attention mask
+		:return: Tuple | (Compressed_Seq, Pad_Mask)
+		"""
+		enc_out = super().forward(
+			src=src,
+			src_mask=src_mask,
+			src_key_padding_mask=src_key_padding_mask,
+			is_causal=is_causal,
+		)
+
+		out, pad_mask = self.gate_layer(enc_out, src_key_padding_mask)
+
+		return out, pad_mask
+
+
+
+
+
+
+
+
+
 
 
 
