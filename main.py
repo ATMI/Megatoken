@@ -3,19 +3,57 @@ import random
 from datetime import datetime
 from functools import partial
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 import torch
 from torch import nn, optim
 from torch.nn.utils import rnn
 from torch.utils import data
 from tqdm import tqdm
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, DataCollatorForLanguageModeling
 
 from classifier import Classifier
 from dataset import prepare_dataset
 
+
 # torch.autograd.set_detect_anomaly(True)
+
+
+def masking(
+		x,
+		pad_mask,
+		mask_token_id=999,
+		mask_prob=0.15
+) -> Tuple[torch.Tensor, torch.Tensor]:
+	"""
+	Randomly mask tokens in the sequence.
+
+	Note: Initial sequence must not contain any special tokens except pad_token.
+	:param x: Initial sequence, [batch_size, seq_len]
+	:param pad_mask: Padding mask, [batch_size, seq_len]. True = pad token
+	:param mask_token_id: Mask token id
+	:param mask_prob: Percentage of tokens to mask
+	:return: Masked inputs, labels
+	"""
+	x_len = pad_mask.size(1) - pad_mask.sum(dim=1)
+	num_to_mask = (mask_prob * x_len).int().clamp(min=1)
+
+	mask = torch.zeros_like(x, dtype=torch.bool)
+
+	for i in range(x.size(0)):
+		candidates = torch.where(~pad_mask[i])[0]
+		perm = torch.randperm(x_len[i])
+		selected = candidates[perm[:num_to_mask[i]]]
+		mask[i, selected] = True
+
+	masked_input = x.clone()
+	masked_input[mask] = mask_token_id
+
+	labels = torch.full_like(x, fill_value=-100)  # -100 = ignore index
+	labels[mask] = x[mask]
+
+	return masked_input, labels
+
 
 def collate(batch, pad):
 	y = torch.tensor([x["label"] >= 3 for x in batch], dtype=torch.float)
@@ -36,9 +74,9 @@ def collate(batch, pad):
 
 
 def ckpt_save(
-	path: Path,
-	model: nn.Module,
-	optimizer: optim.Optimizer,
+		path: Path,
+		model: nn.Module,
+		optimizer: optim.Optimizer,
 ):
 	ckpt = {
 		"model": model.state_dict(),
@@ -56,16 +94,16 @@ def log_save(path: Path, log: List):
 
 
 def epoch_pass(
-	epoch: int,
+		epoch: int,
 
-	device: torch.device,
-	model: nn.Module,
-	criterion: nn.Module,
-	loader: data.DataLoader,
+		device: torch.device,
+		model: nn.Module,
+		criterion: nn.Module,
+		loader: data.DataLoader,
 
-	optimizer: optim.Optimizer | None = None,
-	ckpt_dir: Path = None,
-	ckpt_freq: int = 10,
+		optimizer: optim.Optimizer | None = None,
+		ckpt_dir: Path = None,
+		ckpt_freq: int = 10,
 ):
 	test = optimizer is None
 	if test:
