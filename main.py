@@ -11,11 +11,20 @@ from torch.nn.utils import rnn
 from torch.utils import data
 from tqdm import tqdm
 from transformers import AutoTokenizer
+from transformers import get_linear_schedule_with_warmup, get_constant_schedule_with_warmup
 
 from classifier import Classifier
 from dataset import prepare_dataset
 
+import shutil
+from encoder import SoftGate
+from utils.config import load_config
+from model.model import coBERT
 # torch.autograd.set_detect_anomaly(True)
+
+
+model_cfg_path = "./configs/model_config.yaml"
+train_cfg_path = "./configs/train_config.yaml"
 
 def collate(batch, pad):
 	y = torch.tensor([x["label"] >= 3 for x in batch], dtype=torch.float)
@@ -53,6 +62,12 @@ def log_save(path: Path, log: List):
 		writer = csv.DictWriter(file, fieldnames=header, delimiter="\t")
 		writer.writeheader()
 		writer.writerows(log)
+
+def cfg_save(path: Path, cfg_paths: list):
+	global model_cfg_path, train_cfg_path
+	for cfg_path in cfg_paths:
+		shutil.copy(cfg_path,path)
+
 
 
 def epoch_pass(
@@ -181,16 +196,16 @@ def main():
 	)
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	model = Classifier(
-		vocab_size=tokenizer.vocab_size,
-		pad_idx=tokenizer.pad_token_id,
-		embed_dim=64,
 
-		encoder_gates_num=3,
-		encoder_heads_num=1,
-		encoder_fc_dim=128,
+	model_cfg = load_config(model_cfg_path)
+	train_cfg = load_config(train_cfg_path)
+	cfg_save(ckpt_dir, [model_cfg_path, train_cfg_path])
 
-		class_num=1,
+	model = coBERT(
+		cfg=model_cfg,
+		c_gate=SoftGate,
+		vocab_size=100,
+		pad_idx=1,
 	)
 
 	params = sum(p.numel() for p in model.parameters())
@@ -198,10 +213,30 @@ def main():
 	model.to(device)
 
 	criterion = nn.BCEWithLogitsLoss()
-	optimizer = optim.Adam(model.parameters(), lr=0.001)
+	optimizer = optim.Adam(
+		model.parameters(),
+		lr=train_cfg.Adam.lr,
+		betas = (train_cfg.Adam.b1,train_cfg.Adam.b2),
+		weight_decay = train_cfg.Adam.weight_decay
+	)
 
-	epochs = 10
-	ckpt_freq = 10
+	epochs = train_cfg.epochs
+	ckpt_freq = train_cfg.ckpt_freq
+	total_steps = len(train_loader)
+	warmup_steps = int(total_steps * train_cfg.warmup_steps)
+	total_steps *= epochs
+
+	if train_cfg.scheduler == "lin":
+		scheduler = get_linear_schedule_with_warmup(
+			optimizer,
+			num_warmup_steps=warmup_steps,
+			num_training_steps=total_steps
+		)
+	elif train_cfg.scheduler == "const":
+		scheduler = get_constant_schedule_with_warmup(
+			optimizer,
+			num_warmup_steps=warmup_steps
+		)
 
 	for i in range(epochs):
 		epoch_pass(i, device, model, criterion, train_loader, optimizer, ckpt_dir, ckpt_freq)

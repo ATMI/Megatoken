@@ -4,9 +4,9 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from encoder import SoftGate
-from utils.config import load_config
-from transformer_components import RotaryEncoderLayer, RotaryDecoderLayer, AbsolutePositionalEncoding
+from Megatoken.encoder import SoftGate
+from Megatoken.utils.config import load_config
+from Megatoken.model.transformer_components import RotaryEncoderLayer, RotaryDecoderLayer, AbsolutePositionalEncoding
 
 
 class coBERT(nn.Module):
