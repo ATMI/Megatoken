@@ -62,6 +62,11 @@ class coBERT(nn.Module):
 			num_layers=cfg.decoder.num_layers,
 		)
 
+		self.classifier = nn.Sequential(
+			nn.Dropout(),
+			nn.Linear(cfg.embed_dim, vocab_size),
+		)
+
 	def forward(
 			self,
 			seq,
@@ -96,6 +101,7 @@ class coBERT(nn.Module):
 			tgt_is_causal=True,
 		)
 
+		out = self.classifier(out)
 		return comp_seq, out, ratio
 
 
