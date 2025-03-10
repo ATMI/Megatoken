@@ -3,7 +3,7 @@ import random
 from datetime import datetime
 from functools import partial
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 import torch
 from torch import nn, optim
@@ -13,8 +13,11 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 from transformers import get_linear_schedule_with_warmup, get_constant_schedule_with_warmup
 
-from classifier import Classifier
 from dataset import prepare_dataset
+from encoder import SoftGate
+from model.model import coBERT
+from utils.config import load_config
+
 
 import shutil
 from encoder import SoftGate
@@ -26,9 +29,46 @@ from model.model import coBERT
 model_cfg_path = "./configs/model_config.yaml"
 train_cfg_path = "./configs/train_config.yaml"
 
+
+def masking(
+		x: torch.Tensor,
+		pad_mask: torch.Tensor,
+		mask_token_id: int,
+		mask_prob: float = 0.15,
+		device: torch.device = torch.cpu,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+	"""
+	Randomly mask tokens in the sequence.
+
+	Note: Initial sequence must not contain any special tokens except pad_token.
+	:param x: Initial sequence, [batch_size, seq_len]
+	:param pad_mask: Padding mask, [batch_size, seq_len]. True = pad token
+	:param mask_token_id: Mask token id
+	:param mask_prob: Percentage of tokens to mask
+	:param device: Device
+	:return: Masked inputs, labels
+	"""
+	x_lens = pad_mask.size(1) - pad_mask.sum(dim=1)
+	num_to_mask = (mask_prob * x_lens).int().clamp(min=1)
+
+	mask = torch.zeros_like(x, dtype=torch.bool)
+
+	for i in range(x.size(0)):
+		candidates = torch.where(~pad_mask[i])[0]
+		perm = torch.randperm(x_lens[i])
+		selected = candidates[perm[:num_to_mask[i]]]
+		mask[i, selected] = True
+
+	masked_input = x.clone()
+	masked_input[mask] = mask_token_id
+
+	labels = torch.full_like(x, fill_value=-100, device=device)  # -100 = ignore index for CrossEntropyLoss
+	labels[mask] = x[mask]
+
+	return masked_input, labels
+
+
 def collate(batch, pad):
-	y = torch.tensor([x["label"] >= 3 for x in batch], dtype=torch.float)
-	# y = torch.tensor([x["label"] for x in batch], dtype=torch.float)
 	x = [torch.tensor(x["tokens"]) for x in batch]
 	x = rnn.pad_sequence(x, batch_first=True, padding_value=pad)
 
@@ -41,13 +81,13 @@ def collate(batch, pad):
 		length = len(tokens)
 		x_pad[i, :length] = False
 
-	return x, x_pad, y
+	return x, x_pad
 
 
 def ckpt_save(
-	path: Path,
-	model: nn.Module,
-	optimizer: optim.Optimizer,
+		path: Path,
+		model: nn.Module,
+		optimizer: optim.Optimizer,
 ):
 	ckpt = {
 		"model": model.state_dict(),
@@ -71,16 +111,17 @@ def cfg_save(path: Path, cfg_paths: list):
 
 
 def epoch_pass(
-	epoch: int,
+		epoch: int,
 
-	device: torch.device,
-	model: nn.Module,
-	criterion: nn.Module,
-	loader: data.DataLoader,
+		device: torch.device,
+		model: nn.Module,
+		criterion: nn.Module,
+		loader: data.DataLoader,
+		mask_token_id: int,
 
-	optimizer: optim.Optimizer | None = None,
-	ckpt_dir: Path = None,
-	ckpt_freq: int = 10,
+		optimizer: optim.Optimizer | None = None,
+		ckpt_dir: Path = None,
+		ckpt_freq: int = 10,
 ):
 	test = optimizer is None
 	if test:
@@ -106,17 +147,18 @@ def epoch_pass(
 	correct_total = 0
 	pred_total = 0
 
-	for i, (x, x_pad, y) in enumerate(loader):
+	for i, (x, x_pad) in enumerate(loader):
 		x = x.to(device)
-		y = y.to(device)
 		x_pad = x_pad.to(device)
+
+		x, y = masking(x, x_pad, mask_token_id, device=device)
+		attn_mask = nn.Transformer.generate_square_subsequent_mask(x.size(1), dtype=torch.bool)
 
 		if optimizer is not None:
 			optimizer.zero_grad()
 
-		y_pred, z, ratio = model(x, x_pad)
-		y_pred = y_pred.squeeze(-1)
-		loss = criterion(y_pred, y) + z
+		y_pred, ratio = model(x, x_pad, attn_mask)
+		loss = criterion(y_pred.flatten(start_dim=0, end_dim=1), y.flatten(start_dim=0, end_dim=1))
 
 		if optimizer is not None:
 			loss.backward()
@@ -127,14 +169,14 @@ def epoch_pass(
 		loss_total += loss
 		loss_avg = loss_total / (i + 1)
 
-		batch_size = y_pred.size(0)
-		# correct = y_pred.argmax(dim=1).eq(y).sum().item()
-		correct = y_pred.sigmoid().ge(0.5).eq(y).sum().item()
+		pred = y_pred.argmax(dim=-1)
+		correct = (pred == y).sum().item()
+		num_labels = (y != -100).sum().item()  # Number of tokens to predict
 
-		pred_total += batch_size
+		pred_total += num_labels
 		correct_total += correct
 
-		acc = correct / batch_size
+		acc = correct / num_labels
 		acc_avg = correct_total / pred_total
 
 		log_ent = {
@@ -180,7 +222,6 @@ def main():
 		dataset=dataset_name,
 		tokenizer=tokenizer_name,
 		tokenized_col="text",
-		selected_col=["label"],
 	)
 
 	train_loader = data.DataLoader(
@@ -204,7 +245,7 @@ def main():
 	model = coBERT(
 		cfg=model_cfg,
 		c_gate=SoftGate,
-		vocab_size=100,
+		vocab_size=tokenizer.vocab_size,
 		pad_idx=1,
 	)
 
@@ -238,9 +279,10 @@ def main():
 			num_warmup_steps=warmup_steps
 		)
 
+	mask_token_id = tokenizer.mask_token_id
 	for i in range(epochs):
-		epoch_pass(i, device, model, criterion, train_loader, optimizer, ckpt_dir, ckpt_freq)
-		epoch_pass(i, device, model, criterion, test_loader)
+		epoch_pass(i, device, model, criterion, train_loader, mask_token_id, optimizer, ckpt_dir, ckpt_freq)
+		epoch_pass(i, device, model, criterion, test_loader, mask_token_id)
 
 
 if __name__ == "__main__":
