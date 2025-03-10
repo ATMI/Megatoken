@@ -63,7 +63,7 @@ using [Yelp dataset](https://huggingface.co/datasets/Yelp/yelp_review_full).
 Accuracy for different configurations is presented in diagram above.
 Tested models are performing comparable to the vanilla attention mechanism,
 while significantly compressing the initial sequence.
-Compression raios for two of the configurations are presented below:
+Compression ratios for two of the configurations are presented below:
 
 ![yelp_compression.png](res/yelp_compression.png)
 
