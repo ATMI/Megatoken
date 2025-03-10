@@ -12,8 +12,10 @@ from torch.utils import data
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-from classifier import Classifier
 from dataset import prepare_dataset
+from encoder import SoftGate
+from model.model import coBERT
+from utils.config import load_config
 
 
 # torch.autograd.set_detect_anomaly(True)
@@ -22,7 +24,7 @@ from dataset import prepare_dataset
 def masking(
 		x: torch.Tensor,
 		pad_mask: torch.Tensor,
-		mask_token_id: int = 999,
+		mask_token_id: int,
 		mask_prob: float = 0.15,
 		device: torch.device = torch.cpu,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -37,14 +39,14 @@ def masking(
 	:param device: Device
 	:return: Masked inputs, labels
 	"""
-	x_len = pad_mask.size(1) - pad_mask.sum(dim=1)
-	num_to_mask = (mask_prob * x_len).int().clamp(min=1)
+	x_lens = pad_mask.size(1) - pad_mask.sum(dim=1)
+	num_to_mask = (mask_prob * x_lens).int().clamp(min=1)
 
 	mask = torch.zeros_like(x, dtype=torch.bool)
 
 	for i in range(x.size(0)):
 		candidates = torch.where(~pad_mask[i])[0]
-		perm = torch.randperm(x_len[i])
+		perm = torch.randperm(x_lens[i])
 		selected = candidates[perm[:num_to_mask[i]]]
 		mask[i, selected] = True
 
@@ -58,8 +60,6 @@ def masking(
 
 
 def collate(batch, pad):
-	# y = torch.tensor([x["label"] >= 3 for x in batch], dtype=torch.float)
-	# y = torch.tensor([x["label"] for x in batch], dtype=torch.float)
 	x = [torch.tensor(x["tokens"]) for x in batch]
 	x = rnn.pad_sequence(x, batch_first=True, padding_value=pad)
 
@@ -102,6 +102,7 @@ def epoch_pass(
 		model: nn.Module,
 		criterion: nn.Module,
 		loader: data.DataLoader,
+		mask_token_id: int,
 
 		optimizer: optim.Optimizer | None = None,
 		ckpt_dir: Path = None,
@@ -135,14 +136,15 @@ def epoch_pass(
 		x = x.to(device)
 		x_pad = x_pad.to(device)
 
-		x, y = masking(x, x_pad, device=device)
+		x, y = masking(x, x_pad, mask_token_id, device=device)
+		attn_mask = nn.Transformer.generate_square_subsequent_mask(x.size(1), dtype=torch.bool)
 
 		if optimizer is not None:
 			optimizer.zero_grad()
 
-		y_pred, ratio = model(x, x_pad)
-		y_pred = y_pred.squeeze(-1)
-		loss = criterion(y_pred, y)
+		y_pred, ratio = model(x, x_pad, attn_mask)
+		print("Y_pred:", y_pred.shape)
+		loss = criterion(y_pred.flatten(start_dim=0, end_dim=1), y.flatten(start_dim=0, end_dim=1))
 
 		if optimizer is not None:
 			loss.backward()
@@ -206,7 +208,6 @@ def main():
 		dataset=dataset_name,
 		tokenizer=tokenizer_name,
 		tokenized_col="text",
-		selected_col=["label"],
 	)
 
 	train_loader = data.DataLoader(
@@ -222,45 +223,30 @@ def main():
 	)
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	model = Classifier(
+
+	model_cfg = load_config("configs/model_config.yaml")
+	model = coBERT(
+		cfg=model_cfg,
+		c_gate=SoftGate,
 		vocab_size=tokenizer.vocab_size,
-		pad_idx=tokenizer.pad_token_id,
-		embed_dim=64,
-
-		encoder_gates_num=3,
-		encoder_heads_num=1,
-		encoder_fc_dim=128,
-
-		class_num=1,
+		pad_idx=1,
 	)
 
 	params = sum(p.numel() for p in model.parameters())
 	print("Prams", params, "Vocab", tokenizer.vocab_size)
 	model.to(device)
 
-	criterion = nn.BCEWithLogitsLoss()
+	criterion = nn.CrossEntropyLoss()
 	optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 	epochs = 10
 	ckpt_freq = 10
 
+	mask_token_id = tokenizer.mask_token_id
 	for i in range(epochs):
-		epoch_pass(i, device, model, criterion, train_loader, optimizer, ckpt_dir, ckpt_freq)
-		epoch_pass(i, device, model, criterion, test_loader)
+		epoch_pass(i, device, model, criterion, train_loader, mask_token_id, optimizer, ckpt_dir, ckpt_freq)
+		epoch_pass(i, device, model, criterion, test_loader, mask_token_id)
 
 
 if __name__ == "__main__":
-	y_pred = torch.tensor([
-		[999, 0, 0],
-		[0, 999, 0],
-		[0, 0, 999],
-	])
-	y = torch.tensor([-100, 1, -100])
-
-	pred = y_pred.argmax(dim=-1)
-	print(pred)
-
-	mask = (y != -100)
-	correct = ((pred == y) & mask).sum().item()
-	print((pred == y) & mask)
-	print(pred == y)
+	main()
