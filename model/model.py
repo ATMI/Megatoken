@@ -4,9 +4,10 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from encoder import SoftGate
-from utils.config import load_config
+from .encoder_gates import SoftGate
 from .transformer_components import GatedEncoder, GatedEncoderLayer, AbsolutePositionalEncoding
+
+from utils.config import load_config
 
 
 class coBERT(nn.Module):
@@ -107,7 +108,7 @@ class coBERT(nn.Module):
 
 
 if __name__ == "__main__":
-	cfg = load_config("../configs/test.yaml")
+	cfg = load_config("../config/test.yaml")
 
 	model = coBERT(
 		cfg=cfg,

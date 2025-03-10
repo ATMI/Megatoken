@@ -1,29 +1,22 @@
-import csv
 import random
-import shutil
 from datetime import datetime
 from functools import partial
 from pathlib import Path
-from typing import List, Tuple
+from typing import Tuple
 
 import torch
 from torch import nn, optim
 from torch.nn.utils import rnn
 from torch.utils import data
 from tqdm import tqdm
-from transformers import AutoTokenizer
 from transformers import get_linear_schedule_with_warmup, get_constant_schedule_with_warmup
+import transformers.optimization as opt
 
+from utils.logging import log_save, cfg_save, ckpt_save
 from dataset import prepare_dataset
-from encoder import SoftGate
+from model.encoder_gates import SoftGate
 from utils.config import load_config
 from model.model import coBERT
-
-# torch.autograd.set_detect_anomaly(True)
-
-
-model_cfg_path = "./configs/model_config.yaml"
-train_cfg_path = "./configs/train_config.yaml"
 
 
 def masking(
@@ -80,32 +73,6 @@ def collate(batch, pad):
 	return x, x_pad
 
 
-def ckpt_save(
-		path: Path,
-		model: nn.Module,
-		optimizer: optim.Optimizer,
-):
-	ckpt = {
-		"model": model.state_dict(),
-		"optim": optimizer.state_dict(),
-	}
-	torch.save(ckpt, path)
-
-
-def log_save(path: Path, log: List):
-	with path.open("w") as file:
-		header = log[0].keys()
-		writer = csv.DictWriter(file, fieldnames=header, delimiter="\t")
-		writer.writeheader()
-		writer.writerows(log)
-
-
-def cfg_save(path: Path, cfg_paths: list):
-	global model_cfg_path, train_cfg_path
-	for cfg_path in cfg_paths:
-		shutil.copy(cfg_path, path)
-
-
 def epoch_pass(
 		epoch: int,
 
@@ -116,6 +83,7 @@ def epoch_pass(
 		mask_token_id: int,
 
 		optimizer: optim.Optimizer | None = None,
+		scheduler: opt.LambdaLR | None = None,
 		ckpt_dir: Path = None,
 		ckpt_freq: int = 10,
 ):
@@ -154,11 +122,12 @@ def epoch_pass(
 			optimizer.zero_grad()
 
 		y_pred, ratio = model(x, x_pad, attn_mask)
-		loss = criterion(y_pred.flatten(start_dim=0, end_dim=1), y.flatten(start_dim=0, end_dim=1))
+		loss = criterion(y_pred.flatten(start_dim=0, end_dim=1), y.flatten())
 
 		if optimizer is not None:
 			loss.backward()
 			optimizer.step()
+			scheduler.step()
 		torch.cuda.empty_cache()
 
 		loss = loss.item()
@@ -198,60 +167,60 @@ def epoch_pass(
 	bar.close()
 
 
-def main():
+def run(
+		dataset_name,
+		tokenizer_name,
+):
 	print("Hello, World!")
 
+	# Create run dir for checkpoint, logs and configs
 	ckpt_dir = datetime.now().strftime("%m%d_%H%M")
-	ckpt_dir = Path("checkpoint", ckpt_dir)
+	ckpt_dir = Path("../runs", ckpt_dir)
 	ckpt_dir.mkdir(parents=True, exist_ok=False)
+
+	# Load configs
+	cfg_path = Path("../config/config.yaml")
+	cfg = load_config(cfg_path)
+	model_cfg = cfg.Model
+	train_cfg = cfg.Run
+	vocab_cfg = getattr(cfg.Tokenizer, tokenizer_name)
+	cfg_save(ckpt_dir, [cfg_path])
 
 	torch.random.manual_seed(42)
 	random.seed(42)
-
-	dataset_name = "Yelp/yelp_review_full"
-	tokenizer_name = "google-bert/bert-base-uncased"
-
-	tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-	pad = tokenizer.pad_token_id
-	mask_token_id = tokenizer.mask_token_id
-	vocab_size = tokenizer.vocab_size
 
 	dataset = prepare_dataset(
 		dataset=dataset_name,
 		tokenizer=tokenizer_name,
 		tokenized_col="text",
 	)
-
 	train_loader = data.DataLoader(
 		dataset["train"],
-		batch_size=32,
+		batch_size=train_cfg.train_batch,
 		shuffle=True,
-		collate_fn=partial(collate, pad=pad),
+		collate_fn=partial(collate, pad=vocab_cfg.pad),
 	)
+
 	test_loader = data.DataLoader(
 		dataset["test"],
-		batch_size=256,
-		collate_fn=partial(collate, pad=pad),
+		batch_size=train_cfg.test_batch,
+		collate_fn=partial(collate, pad=vocab_cfg.pad),
 	)
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-	model_cfg = load_config(model_cfg_path)
-	train_cfg = load_config(train_cfg_path)
-	cfg_save(ckpt_dir, [model_cfg_path, train_cfg_path])
-
 	model = coBERT(
 		cfg=model_cfg,
 		c_gate=SoftGate,
-		vocab_size=vocab_size,
-		pad_idx=pad,
+		vocab_size=vocab_cfg.vocab,
+		pad_idx=vocab_cfg.pad,
 	)
 
 	params = sum(p.numel() for p in model.parameters())
-	print("Prams", params, "Vocab", tokenizer.vocab_size)
+	print("Prams", params, "Vocab", vocab_cfg.vocab)
 	model.to(device)
 
-	criterion = nn.BCEWithLogitsLoss()
+	criterion = nn.CrossEntropyLoss()
 	optimizer = optim.Adam(
 		model.parameters(),
 		lr=train_cfg.Adam.lr,
@@ -259,8 +228,9 @@ def main():
 		weight_decay=train_cfg.Adam.weight_decay
 	)
 
-	epochs = train_cfg.epochs
+	epochs = train_cfg.num_epochs
 	ckpt_freq = train_cfg.ckpt_freq
+
 	total_steps = len(train_loader)
 	warmup_steps = int(total_steps * train_cfg.warmup_steps)
 	total_steps *= epochs
@@ -277,10 +247,18 @@ def main():
 			num_warmup_steps=warmup_steps
 		)
 
+	print("Start Training")
 	for i in range(epochs):
-		epoch_pass(i, device, model, criterion, train_loader, mask_token_id, optimizer, ckpt_dir, ckpt_freq)
-		epoch_pass(i, device, model, criterion, test_loader, mask_token_id)
+		epoch_pass(i, device, model, criterion, train_loader, vocab_cfg.mask, optimizer, scheduler, ckpt_dir, ckpt_freq)
+		epoch_pass(i, device, model, criterion, test_loader, vocab_cfg.mask, ckpt_dir=ckpt_dir)
 
 
 if __name__ == "__main__":
-	main()
+	dataset_name = "Yelp/yelp_review_full"
+	roberta = "FacebookAI/roberta-base"
+	bert = "google-bert/bert-base-uncased"
+
+	run(
+		dataset_name=dataset_name,
+		tokenizer_name=bert,
+	)

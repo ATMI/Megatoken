@@ -1,9 +1,9 @@
-from typing import Tuple, List
+from typing import Tuple
 
 import torch
 from torch import nn
 
-from encoder import GatedEncoder
+from model.encoder_gates import GatedEncoder
 
 
 class Classifier(nn.Module):
