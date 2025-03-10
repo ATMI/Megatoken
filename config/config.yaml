@@ -1,0 +1,47 @@
+Model:
+  max_seq_len: 512
+  embed_dim: 512
+  batch_first: True
+
+
+  encoder:
+    num_layers: 12
+    n_head: 8
+    dim_fc: 3072
+    dropout: 0.1
+
+  decoder:
+    num_layers: 3
+    n_head: 8
+    dim_fc: 3072
+    dropout: 0.1
+
+
+
+Run:
+  train_batch: 32
+  test_batch: 256
+  num_epochs: 10
+  scheduler: lin # lin, const,
+  warmup_steps: 0.1 # fraction of a single batch
+  ckpt_freq: 10
+
+
+  Adam:
+    eps: 0.000001
+    lr: 0.0001
+    b1: 0.9
+    b2: 0.98
+    weight_decay: 0.01
+
+
+Tokenizer:
+  google-bert/bert-base-uncased:
+    pad: 0
+    mask: 103
+    vocab: 30522
+
+  FacebookAI/roberta-base:
+    pad: 1
+    mask: 50264
+    vocab: 50265
