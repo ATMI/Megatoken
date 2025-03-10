@@ -18,7 +18,9 @@ Our initial idea was to optimize the attention by removing unused tokens.
 Going back to the example above.
 After the attention matrix calculation, the embeddings for each token will be refined using the corresponding weights:
 
-$$\vec{E}_{\text{creature}} = W_{\text{fluffy creature}} * \vec{E}_{\text{fluffy}} + W_{\text{blue creature}} * \vec{E}_{\text{blue}} + ...$$
+```math
+\vec{E}_{\text{creature}} = W_{\text{fluffy creature}} \times \vec{E}_{\text{fluffy}} + W_{\text{blue creature}} \times \vec{E}_{\text{blue}} +\:\ldots
+```
 
 The formula might vary from implementation to implementation.
 The main idea that abstract representation of the word "creature" will represent "fluffy blue creature" after the
