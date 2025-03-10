@@ -1,5 +1,6 @@
 import csv
 import random
+import shutil
 from datetime import datetime
 from functools import partial
 from pathlib import Path
@@ -15,14 +16,9 @@ from transformers import get_linear_schedule_with_warmup, get_constant_schedule_
 
 from dataset import prepare_dataset
 from encoder import SoftGate
-from model.model import coBERT
-from utils.config import load_config
-
-
-import shutil
-from encoder import SoftGate
 from utils.config import load_config
 from model.model import coBERT
+
 # torch.autograd.set_detect_anomaly(True)
 
 
@@ -103,11 +99,11 @@ def log_save(path: Path, log: List):
 		writer.writeheader()
 		writer.writerows(log)
 
+
 def cfg_save(path: Path, cfg_paths: list):
 	global model_cfg_path, train_cfg_path
 	for cfg_path in cfg_paths:
-		shutil.copy(cfg_path,path)
-
+		shutil.copy(cfg_path, path)
 
 
 def epoch_pass(
@@ -217,6 +213,8 @@ def main():
 
 	tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 	pad = tokenizer.pad_token_id
+	mask_token_id = tokenizer.mask_token_id
+	vocab_size = tokenizer.vocab_size
 
 	dataset = prepare_dataset(
 		dataset=dataset_name,
@@ -245,8 +243,8 @@ def main():
 	model = coBERT(
 		cfg=model_cfg,
 		c_gate=SoftGate,
-		vocab_size=tokenizer.vocab_size,
-		pad_idx=1,
+		vocab_size=vocab_size,
+		pad_idx=pad,
 	)
 
 	params = sum(p.numel() for p in model.parameters())
@@ -257,8 +255,8 @@ def main():
 	optimizer = optim.Adam(
 		model.parameters(),
 		lr=train_cfg.Adam.lr,
-		betas = (train_cfg.Adam.b1,train_cfg.Adam.b2),
-		weight_decay = train_cfg.Adam.weight_decay
+		betas=(train_cfg.Adam.b1, train_cfg.Adam.b2),
+		weight_decay=train_cfg.Adam.weight_decay
 	)
 
 	epochs = train_cfg.epochs
@@ -279,7 +277,6 @@ def main():
 			num_warmup_steps=warmup_steps
 		)
 
-	mask_token_id = tokenizer.mask_token_id
 	for i in range(epochs):
 		epoch_pass(i, device, model, criterion, train_loader, mask_token_id, optimizer, ckpt_dir, ckpt_freq)
 		epoch_pass(i, device, model, criterion, test_loader, mask_token_id)
