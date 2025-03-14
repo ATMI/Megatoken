@@ -10,10 +10,23 @@ T = torch.Tensor | tuple[torch.Tensor]
 
 
 @dataclass
-class StepResult:
+class StepResult:  # bad name :)
 	batch: Batch
 	pred: T
 	loss: float
+
+
+@dataclass
+class Step:
+	epoch: int
+	idx: int
+	num: int
+	lr: any
+	result: StepResult
+
+	@property
+	def is_last(self) -> bool:
+		return self.num == self.idx + 1
 
 
 def train_step(

@@ -5,7 +5,7 @@ import torch
 from torch import nn, optim
 from torch.optim import lr_scheduler
 
-from pipeline.epoch import Step
+from pipeline.step import Step
 
 
 class Checkpoint:

@@ -1,28 +1,12 @@
-from dataclasses import dataclass
-from typing import Callable, Any
-
 from torch import nn, optim
 from torch.optim import lr_scheduler
 from torch.utils import data
 from tqdm import tqdm
 
 from pipeline.batch import Batch
-from pipeline.log import Log
 from pipeline.checkpoint import Checkpoint
-from pipeline.step import train_step, test_step, StepResult
-
-
-@dataclass
-class Step:
-	epoch: int
-	idx: int
-	num: int
-	lr: Any
-	result: StepResult
-
-	@property
-	def is_last(self) -> bool:
-		return self.num == self.idx + 1
+from pipeline.log import Log
+from pipeline.step import train_step, test_step
 
 
 def train_epoch(

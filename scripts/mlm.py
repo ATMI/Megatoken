@@ -8,8 +8,8 @@ from transformers import get_scheduler
 
 from pipeline.batch import Batch
 from pipeline.checkpoint import Checkpoint
-from pipeline.epoch import Step
 from pipeline.log import Log
+from pipeline.step import Step
 from pipeline.train import train
 from utils.config import load_config
 
