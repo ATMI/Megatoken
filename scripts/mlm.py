@@ -1,6 +1,6 @@
 import argparse
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Tuple
 
 import torch
 from torch import nn, optim
@@ -11,7 +11,7 @@ from torch.nn.utils import rnn
 from pipeline.batch import Batch
 from pipeline.checkpoint import Checkpoint
 from pipeline.log import Log
-from pipeline.step import Step
+from pipeline.step import Step, StepResult
 from pipeline.train import train
 from utils.config import load_config
 
@@ -102,13 +102,69 @@ class MLMBatch(Batch):
 class MLMCheckpoint(Checkpoint):
 
 	def condition(self, step: Step) -> bool:
+		# TODO: implement
 		return step.is_last or ...
 
 
 class MLMLog(Log):
 
 	def info(self, step: Step) -> Dict[str, any]:
-		pass
+		acc, acc_ = self.accuracy(step.result)
+		ppl = self.perplexity(step.result.loss)
+		loss_ = self.topk_loss(step.result.loss)
+
+		# TODO: Any other log values?
+		logs = {
+			"loss": step.result.loss,
+			"loss@K": loss_,
+			"acc": acc,
+			"acc@K": acc_,
+			"ratio": step.result.pred.ratio,
+			"PPL": ppl,
+		}
+
+		return logs
+
+	def accuracy(self, result: StepResult) -> Tuple[float, float]:
+		out = result.pred
+		label = result.batch.label  # TODO: access labels with shapes | reshape label here (bad idea)
+		ignore_index = result.batch.ignore_index  # TODO: access ignore index
+
+		y_pred = out.argmax(dim=-1)
+		correct = (y_pred == label).sum().item()
+		num_labels = (label != ignore_index).sum().item()  # Number of tokens to predict
+
+		acc = correct / num_labels
+
+		# Calculate Accuracy@k
+		self.accuracies.append(acc)
+		self.accuracies_sum += acc
+
+		if len(self.accuracies) > self.top_k:
+			a = self.accuracies_sum.pop(0)
+			self.accuracies_sum -= a
+
+		acc_avg = self.accuracies_sum / self.accuracies
+		return acc, acc_avg
+
+	def topk_loss(self, loss: float) -> float:
+		"""
+		Calculates top-k loss
+		:param loss: Loss at step
+		:return: Average loss over K steps
+		"""
+		self.losses.append(loss)
+		self.losses_sum += loss
+
+		if len(self.losses) > self.top_k:
+			l = self.losses.pop(0)
+			self.losses_sum -= l
+
+		loss_avg = self.losses_sum / len(self.losses)
+		return loss_avg
+
+	def perplexity(self, loss: torch.Tensor) -> float:
+		return torch.exp(loss).item()
 
 
 def main():
