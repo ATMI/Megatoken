@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from typing import Dict
 
 
 class Batch:
@@ -7,9 +8,9 @@ class Batch:
 		pass
 
 	@abstractmethod
-	def x(self):
+	def x(self) -> Dict[str, any]:
 		pass
 
 	@abstractmethod
-	def y(self):
+	def y(self) -> Dict[str, any]:
 		pass

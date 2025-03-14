@@ -1,3 +1,13 @@
+train:
+  epochs: 10
+  batch: 32
+
+  scheduler: lin
+  warmup: 0.1
+
+test:
+  batch: 256
+
 Model:
   max_seq_len: 512
   embed_dim: 512
@@ -15,25 +25,6 @@ Model:
     n_head: 8
     dim_fc: 3072
     dropout: 0.1
-
-
-
-Run:
-  train_batch: 32
-  test_batch: 256
-  num_epochs: 10
-  scheduler: lin # lin, const,
-  warmup_steps: 0.1 # fraction of a single batch
-  ckpt_freq: 10
-
-
-  Adam:
-    eps: 0.000001
-    lr: 0.0001
-    b1: 0.9
-    b2: 0.98
-    weight_decay: 0.01
-
 
 Tokenizer:
   google-bert/bert-base-uncased:

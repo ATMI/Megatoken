@@ -29,10 +29,10 @@ class Log:
 	def info(
 		self,
 		step: Step,
-	) -> Dict:
+	) -> Dict[str, any]:
 		pass
 
-	def save(self, epoch: int, info: Dict):
+	def save(self, epoch: int, info: Dict[str, any]):
 		file = self.directory / f"{epoch}" / "log.json"
 		file.parent.mkdir(parents=True, exist_ok=True)
 
