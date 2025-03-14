@@ -13,12 +13,13 @@ from pipeline.train import train
 
 class MLMBatch(Batch):
 
-	@staticmethod
-	def collate_x(batch):
+	def __init__(self, batch):
 		pass
 
-	@staticmethod
-	def collate_y(batch):
+	def x(self):
+		pass
+
+	def y(self):
 		pass
 
 
