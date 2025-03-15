@@ -49,7 +49,12 @@ class MaskModelBatch(Batch):
 		batch_size = x.size(0)
 		seq_len = x.size(1)
 
-		x_pad = torch.ones(batch_size, seq_len, dtype=torch.bool, device=x.device)
+		x_pad = torch.ones(
+			batch_size,
+			seq_len,
+			dtype=torch.bool,
+			device=x.device
+		)
 		for i in range(batch_size):
 			tokens = batch[i]["tokens"]
 			length = len(tokens)
@@ -73,7 +78,10 @@ class MaskModelBatch(Batch):
 		masked_input = self.batch.clone()
 		masked_input[mask] = self.mask_token_id
 
-		labels = torch.full_like(self.batch, fill_value=self.ignore_index)  # -100 = ignore index for CrossEntropyLoss
+		labels = torch.full_like(
+			self.batch,
+			fill_value=self.ignore_index
+		)  # -100 = ignore index for CrossEntropyLoss
 		labels[mask] = self.batch[mask]
 
 		return masked_input, labels
@@ -84,7 +92,10 @@ class MaskModelBatch(Batch):
 
 		attn_mask = None
 		if self.causal_mask:
-			attn_mask = nn.Transformer.generate_square_subsequent_mask(self.batch.size(1), dtype=torch.bool)
+			attn_mask = nn.Transformer.generate_square_subsequent_mask(
+				self.batch.size(1),
+				dtype=torch.bool
+			)
 
 		inputs = {
 			"x": self.batch,
@@ -199,7 +210,8 @@ class MaskModelLog(Log):
 
 		y_pred = out.argmax(dim=-1)
 		correct = (y_pred == label).sum().item()
-		num_labels = (label != ignore_index).sum().item()  # Number of tokens to predict
+		num_labels = (
+				label != ignore_index).sum().item()  # Number of tokens to predict
 
 		acc = correct / num_labels
 
@@ -291,7 +303,7 @@ def main():
 	batch_kwargs = {
 		"pad_index": config.tokenizer.pad,
 		"mask_index": config.tokenizer.mask,
-		"causal_mask": True, # TODO: False?
+		"causal_mask": True,  # TODO: False?
 		"mask_prob": 0.15,
 		"ignore_index": -100,
 	}
