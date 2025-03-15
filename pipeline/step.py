@@ -6,27 +6,21 @@ from torch.optim import lr_scheduler
 
 from pipeline.batch import Batch
 
-T = torch.Tensor | tuple[torch.Tensor]
-
-
-@dataclass
-class StepResult:  # bad name :)
-	batch: Batch
-	pred: T
-	loss: float
-
 
 @dataclass
 class Step:
 	epoch: int
-	idx: int
-	num: int
+	curr: int
+	last: int
+
+	batch: Batch
+	pred: any
+	loss: float
 	lr: any
-	result: StepResult
 
 	@property
 	def is_last(self) -> bool:
-		return self.num == self.idx + 1
+		return self.last == self.curr + 1
 
 
 def train_step(
@@ -51,11 +45,7 @@ def train_step(
 	scheduler.step()
 	torch.cuda.empty_cache()
 
-	return StepResult(
-		batch=batch,
-		pred=pred,
-		loss=loss,
-	)
+	return pred, loss
 
 
 def test_step(
@@ -73,8 +63,4 @@ def test_step(
 	loss = criterion(pred.y, y)
 	torch.cuda.empty_cache()
 
-	return StepResult(
-		batch=batch,
-		pred=pred,
-		loss=loss,
-	)
+	return pred, loss

@@ -36,12 +36,12 @@ class Checkpoint:
 		if not self.condition(step):
 			return False
 
-		path = self.directory / f"{step.epoch}" / f"{step.idx}.ckpt"
+		path = self.directory / f"{step.epoch}" / f"{step.curr}.ckpt"
 		path.parent.mkdir(parents=True, exist_ok=True)
 
 		state = {
 			"epoch": step.epoch,
-			"step": step.idx,
+			"step": step.curr,
 			"model": model.state_dict(),
 			"optimizer": optimizer.state_dict(),
 			"scheduler": scheduler.state_dict(),

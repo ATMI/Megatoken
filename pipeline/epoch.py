@@ -6,7 +6,7 @@ from tqdm import tqdm
 from pipeline.batch import Batch
 from pipeline.checkpoint import Checkpoint
 from pipeline.log import Log
-from pipeline.step import train_step, test_step
+from pipeline.step import train_step, test_step, Step
 
 
 def train_epoch(
@@ -25,7 +25,7 @@ def train_epoch(
 	progress_bar = tqdm(total=step_num, desc=f"Train {epoch}")
 
 	for step, batch in enumerate(loader):
-		result = train_step(
+		pred, loss = train_step(
 			model=model,
 			criterion=criterion,
 			optimizer=optimizer,
@@ -35,10 +35,12 @@ def train_epoch(
 
 		step = Step(
 			epoch=epoch,
-			idx=step,
-			num=step_num,
+			curr=step,
+			last=step_num,
+			batch=batch,
+			pred=pred,
+			loss=loss,
 			lr=scheduler.get_last_lr(),
-			result=result,
 		)
 
 		info = log(step)
@@ -63,7 +65,7 @@ def test_epoch(
 	progress_bar = tqdm(total=step_num, desc=f"Test  {epoch}")
 
 	for step, batch in enumerate(loader):
-		result = test_step(
+		pred, loss = test_step(
 			model=model,
 			criterion=criterion,
 			batch=batch,
@@ -71,10 +73,12 @@ def test_epoch(
 
 		step = Step(
 			epoch=epoch,
-			idx=step,
-			num=step_num,
+			curr=step,
+			last=step_num,
+			batch=batch,
+			pred=pred,
+			loss=loss,
 			lr=None,
-			result=result,
 		)
 
 		info = log(step)

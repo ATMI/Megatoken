@@ -67,26 +67,13 @@ class SoftGate(nn.Module):
 class GatedEncoderLayer(nn.Module):
 	def __init__(
 		self,
-		embed_dim: int,
-		heads_num: int,
+		model_dim: int,
+		head_num: int,
 		fc_dim: int,
 	):
 		super(GatedEncoderLayer, self).__init__()
-		self.attention = nn.MultiheadAttention(
-			embed_dim=embed_dim,
-			num_heads=heads_num,
-			batch_first=True,
-		)
-		self.gate = SoftGate(embed_dim)
-		self.norm1 = nn.LayerNorm(embed_dim)
-		self.norm2 = nn.LayerNorm(embed_dim)
-		self.ff = nn.Sequential(
-			nn.Linear(embed_dim, fc_dim),
-			nn.SiLU(),
-			nn.Dropout(),
-
-			nn.Linear(fc_dim, embed_dim),
-			nn.Dropout(),
+		self.encoder = nn.TransformerEncoderLayer(
+			d_model=model_dim,
 		)
 
 	def forward(
@@ -127,7 +114,7 @@ class GatedEncoder(nn.Module):
 		self.layers = nn.ModuleList([
 			GatedEncoderLayer(
 				embed_dim=embed_dim,
-				heads_num=heads_num,
+				head_num=heads_num,
 				fc_dim=fc_dim,
 			)
 			for _ in range(gates_num)
