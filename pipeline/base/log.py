@@ -3,7 +3,7 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Dict
 
-from pipeline.step import Step
+from pipeline.base.step import Step
 
 
 class Log:

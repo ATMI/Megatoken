@@ -1,0 +1,27 @@
+import torch
+from torch import nn
+
+from model.transformer import GatedTransformer
+
+
+class MaskModel(nn.Module):
+	def __init__(self, model, tokenizer):
+		super(MaskModel, self).__init__()
+
+		self.transformer = GatedTransformer(model, tokenizer)
+		self.classifier = nn.Sequential(
+			nn.Dropout(model.classifier.dropout),
+			nn.Linear(model.dim, tokenizer.vocab),
+		)
+
+	def forward(
+		self,
+		x: torch.Tensor,
+		x_pad: torch.Tensor,
+
+		y: torch.Tensor,
+		y_pad: torch.Tensor,
+	) -> any:
+		y, y_pad, ratio = self.transformer(x, x_pad, y, y_pad)
+		y = self.classifier(y)
+		return y, y_pad, ratio

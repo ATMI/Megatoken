@@ -3,10 +3,10 @@ from torch.optim import lr_scheduler
 from torch.utils import data
 from tqdm import tqdm
 
-from pipeline.batch import Batch
-from pipeline.checkpoint import Checkpoint
-from pipeline.log import Log
-from pipeline.step import train_step, test_step, Step
+from pipeline.base.batch import Batch
+from pipeline.base.checkpoint import Checkpoint
+from pipeline.base.log import Log
+from pipeline.base.step import train_step, test_step, Step
 
 
 def train_epoch(
@@ -25,13 +25,17 @@ def train_epoch(
 	progress_bar = tqdm(total=step_num, desc=f"Train {epoch}")
 
 	for step, batch in enumerate(loader):
-		pred, loss = train_step(
-			model=model,
-			criterion=criterion,
-			optimizer=optimizer,
-			scheduler=scheduler,
-			batch=batch,
-		)
+		try:
+			pred, loss = train_step(
+				model=model,
+				criterion=criterion,
+				optimizer=optimizer,
+				scheduler=scheduler,
+				batch=batch,
+			)
+		except KeyboardInterrupt as _:
+			checkpoint(model, optimizer, scheduler, None)
+			break
 
 		step = Step(
 			epoch=epoch,

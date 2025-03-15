@@ -2,10 +2,10 @@ from torch import nn, optim
 from torch.optim import lr_scheduler
 from torch.utils import data
 
-from pipeline.batch import Batch
-from pipeline.checkpoint import Checkpoint
-from pipeline.log import Log
-from pipeline.epoch import train_epoch, test_epoch
+from pipeline.base.batch import Batch
+from pipeline.base.checkpoint import Checkpoint
+from pipeline.base.log import Log
+from pipeline.base.epoch import train_epoch, test_epoch
 
 
 def train(

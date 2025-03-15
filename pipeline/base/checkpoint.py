@@ -1,11 +1,12 @@
 from abc import abstractmethod
 from pathlib import Path
+from typing import Optional
 
 import torch
 from torch import nn, optim
 from torch.optim import lr_scheduler
 
-from pipeline.step import Step
+from pipeline.base.step import Step
 
 
 class Checkpoint:
@@ -20,22 +21,16 @@ class Checkpoint:
 		self.directory.mkdir(parents=True, exist_ok=True)
 
 	@abstractmethod
-	def condition(
-		self,
-		step: Step,
-	) -> bool:
+	def condition(self, step: Optional[Step]) -> bool:
 		pass
 
-	def __call__(
+	def save(
 		self,
 		model: nn.Module,
 		optimizer: optim.Optimizer,
 		scheduler: lr_scheduler.LRScheduler,
 		step: Step,
-	) -> bool:
-		if not self.condition(step):
-			return False
-
+	) -> None:
 		path = self.directory / f"{step.epoch}" / f"{step.curr}.ckpt"
 		path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -48,4 +43,15 @@ class Checkpoint:
 		}
 		torch.save(state, path)
 
+	def __call__(
+		self,
+		model: nn.Module,
+		optimizer: optim.Optimizer,
+		scheduler: lr_scheduler.LRScheduler,
+		step: Optional[Step],
+	) -> bool:
+		if not self.condition(step):
+			return False
+
+		self.save(model, optimizer, scheduler, step)
 		return True

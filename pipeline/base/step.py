@@ -4,7 +4,7 @@ import torch
 from torch import nn, optim
 from torch.optim import lr_scheduler
 
-from pipeline.batch import Batch
+from pipeline.base.batch import Batch
 
 
 @dataclass
