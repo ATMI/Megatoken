@@ -23,6 +23,7 @@ class Step:
 	num: int
 	lr: any
 	result: StepResult
+	is_abort: bool = False
 
 	@property
 	def is_last(self) -> bool:

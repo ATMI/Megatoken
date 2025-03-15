@@ -99,12 +99,38 @@ class MLMBatch(Batch):
 		return flat_label
 
 
-class MLMCheckpoint(Checkpoint):
+
+class MaskModelCheckpoint(Checkpoint):
 
 	def condition(self, step: Step) -> bool:
-		# TODO: implement
-		return step.is_last or ...
+		cond = False
 
+		# Keyboard Interruption
+		if step.is_abort:
+			cond = True
+
+		# Save each N steps
+		if step.idx % 1000 == 0:
+			cond = True
+
+		# Conditions based on previous checkpoints
+		if self.prev_loss is not None:
+			# Save if loss dropped greatly after last checkpoint
+			loss_vel = self.prev_loss - step.result.loss
+			if loss_vel >= self.tol: #0.05
+				cond = True
+
+			# Save each T minutes
+			if self.timestamp - time.time() >= self.time_interval * 60:
+				cond = True
+
+
+		if cond:
+			self.timestamp = time.time()
+			self.prev_loss = step.result.loss
+
+
+		return step.is_last or cond
 
 class MLMLog(Log):
 
