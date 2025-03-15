@@ -29,7 +29,6 @@ class MaskModelBatch(Batch):
 		mask_prob: float = 0.15,
 		ignore_index: int = -100,
 	):
-
 		self.batch, self.pad_mask = self.collate(batch)
 		self.pad_index = pad_index
 		self.mask_token_id = mask_index
@@ -56,8 +55,7 @@ class MaskModelBatch(Batch):
 
 		return x, x_pad
 
-	# TODO: make wider masks
-	# TODO: make mode in masking
+	# TODO: make wider masks and mode
 	def masking(self):
 		x_lens = self.pad_mask.size(1) - self.pad_mask.sum(dim=1)
 		num_to_mask = (self.mask_prob * x_lens).int().clamp(min=1)
@@ -78,7 +76,6 @@ class MaskModelBatch(Batch):
 
 		return masked_input, labels
 
-	@property
 	def x(self) -> Dict[str, any]:
 		self.masked_x, self.label = self.masking()
 
@@ -87,14 +84,14 @@ class MaskModelBatch(Batch):
 			attn_mask = nn.Transformer.generate_square_subsequent_mask(self.batch.size(1), dtype=torch.bool)
 
 		inputs = {
-			"x": self.masked_x,
+			"x": self.batch,
+			"mask_x": self.masked_x,
 			"pad": self.pad_mask,
 			"attn": attn_mask
 		}
 
 		return inputs
 
-	@property
 	def y(self) -> torch.Tensor:
 		"""
 		Shape: [batch_size * seq_len]
@@ -104,54 +101,87 @@ class MaskModelBatch(Batch):
 		return flat_label
 
 
-
 class MaskModelCheckpoint(Checkpoint):
+	def __init__(
+		self,
+		directory: Path,
+		loss_thresh: float = 0.05,
+		time_interval: int = 20,
+		step_interval: int = 1000,
+	):
+		"""
+
+		:param directory: Directory to save checkpoints to.
+		:param loss_thresh: Threshold for saving checkpoints based on loss difference
+		:param time_interval: Interval (mins) for saving checkpoints
+		:param step_interval: Interval in steps for saving checkpoints
+		"""
+		super().__init__(directory)
+
+		self.loss_thresh = loss_thresh
+		self.time_interval = time_interval
+		self.step_interval = step_interval
+
+		self.prev_loss = None
+		self.timestamp = None
 
 	def condition(self, step: Step) -> bool:
-		cond = False
+		save_condition = False
 
 		# Keyboard Interruption
 		if step.is_abort:
-			cond = True
+			save_condition = True
 
 		# Save each N steps
-		if step.idx % 1000 == 0:
-			cond = True
+		if step.idx % self.step_interval == 0:
+			save_condition = True
 
 		# Conditions based on previous checkpoints
 		if self.prev_loss is not None:
 			# Save if loss dropped greatly after last checkpoint
 			loss_vel = self.prev_loss - step.result.loss
-			if loss_vel >= self.tol: #0.05
-				cond = True
+			if loss_vel >= self.loss_thresh:
+				save_condition = True
 
 			# Save each T minutes
 			if self.timestamp - time.time() >= self.time_interval * 60:
-				cond = True
+				save_condition = True
 
-
-		if cond:
+		if save_condition:
 			self.timestamp = time.time()
 			self.prev_loss = step.result.loss
 
-
-		return step.is_last or cond
+		return step.is_last or save_condition
 
 
 class MaskModelLog(Log):
+
+	def __init__(
+		self,
+		directory: str | Path,
+		top_k: int = 1000,
+	):
+		super().__init__(directory)
+
+		self.top_k = top_k
+
+		self.losses = []
+		self.losses_sum = []
+
+		self.accuracies = []
+		self.accuracies_sum = []
 
 	def info(self, step: Step) -> Dict[str, any]:
 		acc, acc_ = self.accuracy(step.result)
 		ppl = self.perplexity(step.result.loss)
 		loss_ = self.topk_loss(step.result.loss)
 
-		# TODO: Fix ratios
 		logs = {
 			"loss": step.result.loss,
 			"loss@K": loss_,
 			"acc": acc,
 			"acc@K": acc_,
-			"ratio": step.result.pred.ratios.mean(),
+			"ratios": step.result.pred[2],
 			"PPL": ppl,
 		}
 
@@ -159,7 +189,7 @@ class MaskModelLog(Log):
 
 	def accuracy(self, result: StepResult) -> Tuple[float, float]:
 		out = result.pred
-		#TODO: fix access for label and ignore_index
+		# TODO: fix access for label and ignore_index
 		label = result.batch.label
 		ignore_index = result.batch.ignore_index
 
@@ -216,8 +246,8 @@ def main():
 	dataset = {}
 	model = nn.Module()
 
-	tokenizer_config = getattr(config.Tokenizer, args.tokenizer)
-	#TODO provide other values in config file!
+	tokenizer_config = config.tokenizer
+	# TODO provide other values in config file!
 	batch_kwargs = {
 		"pad_index": tokenizer_config.pad,
 		"mask_index": tokenizer_config.mask,

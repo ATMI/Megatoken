@@ -10,7 +10,6 @@ class Log:
 	def __init__(
 		self,
 		directory: str | Path,
-		top_k: int = 1000,
 	):
 		if isinstance(directory, str):
 			directory = Path(directory)
@@ -18,12 +17,6 @@ class Log:
 		self.directory = directory
 		self.directory.mkdir(parents=True, exist_ok=True)
 
-		# TODO: leave here or move upper?
-		self.top_k = top_k
-		self.losses = []
-		self.losses_sum = []
-		self.accuracies = []
-		self.accuracies_sum = []
 
 	def __call__(
 		self,
