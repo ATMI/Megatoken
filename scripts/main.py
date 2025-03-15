@@ -181,7 +181,7 @@ def run(
 	# Load configs
 	cfg_path = Path("../config/config.yaml")
 	cfg = load_config(cfg_path)
-	model_cfg = cfg.Transformer
+	model_cfg = cfg.GatedTransformer
 	train_cfg = cfg.Run
 	vocab_cfg = getattr(cfg.Tokenizer, tokenizer_name)
 	cfg_save(ckpt_dir, [cfg_path])

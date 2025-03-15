@@ -7,7 +7,7 @@ from torch import nn, optim
 from torch.utils import data
 from transformers import get_scheduler
 
-from model.transformer import Transformer
+from model.transformer import GatedTransformer
 from pipeline.batch import Batch
 from pipeline.checkpoint import Checkpoint
 from pipeline.log import Log
@@ -44,10 +44,10 @@ class MLM(nn.Module):
 	def __init__(self, config):
 		super(MLM, self).__init__()
 
-		self.transformer = Transformer.from_config(config)
+		self.transformer = GatedTransformer(config)
 		self.classifier = nn.Sequential(
 			nn.Dropout(config.classifier.dropout),
-			nn.Linear(config.dim, config.vocab_size),
+			nn.Linear(config.dim, config.embedding.size),
 		)
 
 	def forward(
@@ -58,9 +58,9 @@ class MLM(nn.Module):
 		y: torch.Tensor,
 		y_pad: torch.Tensor,
 	) -> any:
-		y = self.transformer(x, x_pad, y, y_pad)
+		y, y_pad, ratio = self.transformer(x, x_pad, y, y_pad)
 		y = self.classifier(y)
-		return y
+		return y, y_pad, ratio
 
 
 def main():
@@ -81,7 +81,7 @@ def main():
 
 	x = torch.randint(
 		low=0,
-		high=config.model.vocab_size,
+		high=config.model.embedding.size,
 		size=(batch, seq),
 	)
 	x_pad = torch.tensor(
@@ -96,7 +96,7 @@ def main():
 	############################################################################
 
 	dataset = {}
-	model = MLM(config)
+	model = MLM(config.model)
 
 	train_loader = data.DataLoader(
 		dataset=dataset["train"],

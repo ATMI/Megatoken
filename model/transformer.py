@@ -1,83 +1,110 @@
-from typing import Tuple
+import importlib
+from typing import Tuple, List
 
-import torch
-from torch import nn
+from torch import nn, Tensor
 
-from model.decoder import Decoder
-from model.encoder import Encoder
+from model.positional import AbsolutePositionalEncoding
 
 
-class Transformer(nn.Module):
+class GatedEncoderLayer(nn.Module):
 	def __init__(
 		self,
-
 		model_dim: int,
-		vocab_size: int,
-		pad_idx: int,
-		max_len: int,
-
-		encoder_layer_num: int,
-		encoder_head_num: int,
-		encoder_fc_dim: int,
-		encoder_dropout: float,
-
-		decoder_layer_num: int,
-		decoder_head_num: int,
-		decoder_fc_dim: int,
-		decoder_dropout: float,
+		head_num: int,
+		fc_dim: int,
+		dropout: float,
+		gate: nn.Module,
 	):
-		super(Transformer, self).__init__()
+		super(GatedEncoderLayer, self).__init__()
+		self.encoder = nn.TransformerEncoderLayer(
+			d_model=model_dim,
+			nhead=head_num,
+			dim_feedforward=fc_dim,
+			dropout=dropout,
+			batch_first=True,
+		)
+		self.gate = gate
 
-		self.encoder = Encoder(
-			model_dim=model_dim,
-			layer_num=encoder_layer_num,
-			head_num=encoder_head_num,
-			fc_dim=encoder_fc_dim,
-			vocab_size=vocab_size,
-			pad_idx=pad_idx,
-			max_len=max_len,
-			dropout=encoder_dropout,
+	def forward(self, x: Tensor, x_pad: Tensor) -> Tuple[Tensor, Tensor]:
+		x = self.encoder(x, None, x_pad, False)
+		x, x_pad = self.gate(x, x_pad)
+		return x, x_pad
+
+
+class GatedTransformer(nn.Module):
+	def __init__(self, config):
+		super(GatedTransformer, self).__init__()
+
+		self.positional = AbsolutePositionalEncoding(
+			model_dim=config.dim,
+			max_len=config.max_len,
+			dropout=config.positional.dropout,
 		)
 
-		self.decoder = Decoder(
-			model_dim=model_dim,
-			layer_num=decoder_layer_num,
-			head_num=decoder_head_num,
-			fc_dim=decoder_fc_dim,
-			dropout=decoder_dropout,
+		self.embedding = nn.Embedding(
+			num_embeddings=config.embedding.size,
+			embedding_dim=config.dim,
+			padding_idx=config.embedding.pad,
+		)
+
+		gate = config.encoder.gate
+		mod, cls = gate.name.rsplit(".", 1)
+		mod = importlib.import_module(mod)
+
+		cls = getattr(mod, cls)
+		del gate.name
+		gate = vars(gate)
+
+		self.encoder = nn.ModuleList(
+			GatedEncoderLayer(
+				model_dim=config.dim,
+				head_num=config.encoder.head_num,
+				fc_dim=config.encoder.fc_dim,
+				dropout=config.encoder.dropout,
+				gate=cls(**gate)
+			)
+			for _ in range(config.encoder.layer_num)
+		)
+
+		self.decoder = nn.TransformerDecoder(
+			decoder_layer=nn.TransformerDecoderLayer(
+				d_model=config.dim,
+				nhead=config.decoder.head_num,
+				dim_feedforward=config.decoder.fc_dim,
+				dropout=config.decoder.dropout,
+				batch_first=True,
+			),
+			num_layers=config.decoder.layer_num,
 		)
 
 	def forward(
 		self,
+		x: Tensor, x_pad: Tensor,
+		y: Tensor, y_pad: Tensor,
+	) -> Tuple[Tensor, Tensor, List[float]]:
+		ratio = []
 
-		x: torch.Tensor,
-		x_pad: torch.Tensor,
+		x = self.embedding(x)
+		x = self.positional(x)
 
-		y: torch.Tensor,
-		y_pad: torch.Tensor,
-	) -> Tuple[
-		torch.Tensor,
-		torch.Tensor,
-	]:
-		e, e_mask = self.encoder(x, x_pad)
-		y, y_pad = self.decoder(y, y_pad, e, e_mask)
-		return y, y_pad
+		for encoder in self.encoder:
+			e, e_pad = encoder(x, x_pad)
 
-	@staticmethod
-	def from_config(config):
-		return Transformer(
-			model_dim=config.dim,
-			vocab_size=config.vocab_size,
-			pad_idx=config.pad_idx,
-			max_len=config.max_len,
+			e_len = e_pad.size(1) - e_pad.sum(dim=1)
+			x_len = x_pad.size(1) - x_pad.sum(dim=1)
+			r = (e_len / x_len).mean(dim=0).item()
+			ratio.append(r)
 
-			encoder_layer_num=config.encoder.layer_num,
-			encoder_head_num=config.encoder.head_num,
-			encoder_fc_dim=config.encoder.fc_dim,
-			encoder_dropout=config.encoder.dropout,
+			x, x_pad = e, e_pad
 
-			decoder_layer_num=config.decoder.layer_num,
-			decoder_head_num=config.decoder.head_num,
-			decoder_fc_dim=config.decoder.fc_dim,
-			decoder_dropout=config.decoder.dropout,
+		y = self.embedding(y)
+		y = self.positional(y)
+
+		y = self.decoder(
+			y, x,
+			None, None,
+			y_pad, x_pad,
+			False, False,
 		)
+
+		return y, y_pad, ratio

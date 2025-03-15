@@ -38,7 +38,7 @@ def train_step(
 	pred = model(x)
 	y = batch.y
 
-	loss = criterion(pred.y, y)
+	loss = criterion(pred, y)
 	loss.backward()
 
 	optimizer.step()
@@ -60,7 +60,7 @@ def test_step(
 	pred = model(x)
 
 	y = batch.y
-	loss = criterion(pred.y, y)
+	loss = criterion(pred, y)
 	torch.cuda.empty_cache()
 
 	return pred, loss
