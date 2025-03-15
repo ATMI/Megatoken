@@ -13,18 +13,21 @@ from pipeline.checkpoint import Checkpoint
 from pipeline.log import Log
 from pipeline.step import Step
 from pipeline.train import train
+from scripts.dataset import prepare_dataset
 from utils.config import load_config
 
 
 class MLMBatch(Batch):
 
-	def __init__(self, batch):
-		pass
-
+	@property
 	def x(self) -> Dict[str, any]:
 		pass
 
+	@property
 	def y(self) -> Dict[str, any]:
+		pass
+
+	def __init__(self, batch):
 		pass
 
 
@@ -41,13 +44,13 @@ class MLMLog(Log):
 
 
 class MLM(nn.Module):
-	def __init__(self, config):
+	def __init__(self, model, tokenizer):
 		super(MLM, self).__init__()
 
-		self.transformer = GatedTransformer(config)
+		self.transformer = GatedTransformer(model, tokenizer)
 		self.classifier = nn.Sequential(
-			nn.Dropout(config.classifier.dropout),
-			nn.Linear(config.dim, config.embedding.size),
+			nn.Dropout(model.classifier.dropout),
+			nn.Linear(model.dim, tokenizer.vocab),
 		)
 
 	def forward(
@@ -74,29 +77,25 @@ def main():
 	# 	exit(1)
 
 	config = load_config(args.config)
-	############################################################################
-	model = MLM(config.model)
-	batch = 3
-	seq = 10
 
-	x = torch.randint(
-		low=0,
-		high=config.model.embedding.size,
-		size=(batch, seq),
-	)
-	x_pad = torch.tensor(
-		[
-			[0] * (seq - i) + [1] * i
-			for i in range(batch)
-		],
-		dtype=torch.bool,
+	model = MLM(
+		model=config.model,
+		tokenizer=config.tokenizer,
 	)
 
-	y = model(x, x_pad, x, x_pad)
-	############################################################################
+	log = MLMLog(
+		directory=args.output,
+	)
 
-	dataset = {}
-	model = MLM(config.model)
+	checkpoint = MLMCheckpoint(
+		directory=args.output,
+	)
+
+	dataset = prepare_dataset(
+		dataset=config.dataset.path,
+		tokenizer=config.tokenizer.path,
+		tokenized_col=config.dataset.text_col,
+	)
 
 	train_loader = data.DataLoader(
 		dataset=dataset["train"],
@@ -113,19 +112,21 @@ def main():
 	)
 
 	criterion = nn.CrossEntropyLoss()
-	optimizer = optim.AdamW(model.parameters(), lr=config.lr)
-	scheduler = get_scheduler(
-		name=config.scheduler,
-		optimizer=optimizer,
-		num_warmup_steps=int(config.train.warmup * len(train_loader)),
-		num_training_steps=config.epochs * len(train_loader),
+
+	optimizer = optim.AdamW(
+		params=model.parameters(),
+		lr=config.train.lr
 	)
 
-	log = MLMLog(args.output)
-	checkpoint = MLMCheckpoint(args.output)
+	scheduler = get_scheduler(
+		name=config.train.scheduler,
+		optimizer=optimizer,
+		num_warmup_steps=int(config.train.warmup * len(train_loader)),
+		num_training_steps=config.train.epochs * len(train_loader),
+	)
 
 	train(
-		epochs=config.epochs,
+		epochs=config.train.epochs,
 		model=model,
 
 		criterion=criterion,

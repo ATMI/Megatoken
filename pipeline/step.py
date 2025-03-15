@@ -35,7 +35,7 @@ def train_step(
 	optimizer.zero_grad()
 
 	x = batch.x
-	pred = model(x)
+	pred = model(**x)
 	y = batch.y
 
 	loss = criterion(pred, y)

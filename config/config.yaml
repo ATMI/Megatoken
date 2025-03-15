@@ -4,6 +4,7 @@ train:
 
   scheduler: linear
   warmup: 0.1
+  lr: 0.0001
 
 test:
   batch: 256
@@ -11,10 +12,6 @@ test:
 model:
   dim: 32
   max_len: 512
-
-  embedding:
-    size: 1000
-    pad: 0
 
   positional:
     dropout: 0.3
@@ -26,8 +23,7 @@ model:
     dropout: 0.1
 
     gate:
-      name: "model.gate.SoftGate"
-      embed_dim: 32
+      path: "model.gate.nvidia"
 
 
   decoder:
@@ -38,3 +34,12 @@ model:
 
   classifier:
     dropout: 0.3
+
+tokenizer:
+  path: "FacebookAI/roberta-base"
+  vocab: 50265
+  pad: 1
+
+dataset:
+  path: "Yelp/yelp_review_full"
+  text_col: "text"

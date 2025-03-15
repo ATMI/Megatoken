@@ -26,12 +26,8 @@ def prepare_dataset(
 	dataset: str,
 	tokenizer: str,
 	tokenized_col: str,
-	selected_col: List[str] = None,
 	num_proc: int = NUM_PROC,
 ):
-	if selected_col is None:
-		selected_col = []
-
 	ds = load_dataset(dataset)
 	ds = ds.map(
 		tokenize,
@@ -43,5 +39,5 @@ def prepare_dataset(
 		batched=True,
 	)
 
-	ds = ds.select_columns(["tokens"] + selected_col)
+	ds = ds.select_columns(["tokens"])
 	return ds
