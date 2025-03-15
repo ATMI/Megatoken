@@ -17,6 +17,7 @@ class Log:
 		self.directory = directory
 		self.directory.mkdir(parents=True, exist_ok=True)
 
+
 	def __call__(
 		self,
 		step: Step,
@@ -26,10 +27,7 @@ class Log:
 		return info
 
 	@abstractmethod
-	def info(
-		self,
-		step: Step,
-	) -> Dict[str, any]:
+	def info(self, step: Step) -> Dict[str, any]:
 		pass
 
 	def save(self, epoch: int, info: Dict[str, any]):
