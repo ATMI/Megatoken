@@ -1,3 +1,4 @@
+import random
 from typing import Dict, Tuple
 
 import torch
@@ -69,43 +70,37 @@ class MaskModelBatch(Batch):
 		mask_token: int,
 		ignore_index: int,
 		mask_prob: float,
-		window_size: int = 3,
+		min_window: int = 3,
+		max_window: int = 5,
 	):
-		# 1) Bias with WS
-		# 2) Arrange number of spans
-		# 3) Permute
-		# 4) randomly choose span id
-		# 5) Fill mask of span
 		x_lens = x_pad.size(1) - x_pad.sum(dim=1)
 		num_to_mask = (mask_prob * x_lens).int().clamp(min=1)
 
 		mask = torch.zeros_like(x, dtype=torch.bool)
 
 		for i in range(x.size(0)):
+			window_size = random.randint(min_window, max_window)
 			x_len = x_lens[i].item()
 			seq_num_to_mask = num_to_mask[i].item()
 
-			bias = torch.randint(0, window_size - 1, (1,)).item()
+			num_splits = int(x_len // window_size)  # Split sequence into equal spans
+			num_spans = max(seq_num_to_mask // window_size, 1)  # Number of spans we must mask
 
-			num_splist = (x_len - bias) // window_size
-			num_spans = seq_num_to_mask // window_size
-			print(num_spans)
-
-			spans = torch.arange(num_splist, dtype=torch.int)
-			perm = torch.randperm(len(spans))
+			# Randomly select spans to mask
+			spans = torch.arange(num_splits, dtype=torch.int)
+			perm = torch.randperm(num_splits)
 			selected_spans = spans[perm[:num_spans]]
 
-			# Convert spans idx to first index of each span
-			spans_beg = [window_size * i + bias for i in selected_spans]
+			# Convert spans idx to token idx
+			spans_beg = selected_spans * window_size
+			masked_tokens = (spans_beg.unsqueeze(1) + torch.arange(window_size)).flatten()
 
-			selected_tok = [torch.arange(start, start + window_size) for start in spans_beg]
-			selected_tok = torch.concat(selected_tok)
-			mask[i, selected_tok] = True
+			mask[i, masked_tokens] = True
 
 		masked_input = x.clone()
 		masked_input[mask] = mask_token
 
-		labels = torch.full_like(x, fill_value=ignore_index)  # -100 = ignore index for CrossEntropyLoss
+		labels = torch.full_like(x, fill_value=ignore_index)
 		labels[mask] = x[mask]
 
 		return masked_input, labels
