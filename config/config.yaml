@@ -17,7 +17,7 @@ model:
     dropout: 0.3
 
   encoder:
-    layer_num: 4
+    layer_num: 2
     head_num: 2
     fc_dim: 64
     dropout: 0.1
@@ -28,7 +28,7 @@ model:
 
   decoder:
     layer_num: 2
-    head_num: 4
+    head_num: 2
     fc_dim: 64
     dropout: 0.1
 

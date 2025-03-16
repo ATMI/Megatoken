@@ -9,4 +9,6 @@ class MaskModelLoss(nn.Module):
 		super(MaskModelLoss, self).__init__()
 
 	def forward(self, pred: MaskModel.Output, y: Tensor) -> Tensor:
-		return fn.cross_entropy(pred.y, y)
+		y_pred = pred.y.flatten(0, 1)
+		y = y.flatten()
+		return fn.cross_entropy(y_pred, y)

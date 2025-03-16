@@ -107,5 +107,5 @@ class MaskModelBatch(Batch):
 		Shape: [batch_size * seq_len]
 		:return: RETURN TENSOR FOR CROSS-ENTROPY-LOSS
 		"""
-		y = self.y_.flatten()
-		return y
+		# y = self.y_.flatten()
+		return self.y_
