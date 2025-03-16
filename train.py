@@ -2,16 +2,17 @@ import argparse
 from functools import partial
 from pathlib import Path
 
-from torch import nn, optim
+from torch import optim
 from torch.utils import data
 from transformers import get_scheduler
 
 from pipeline.base.train import train
-from scripts.dataset import prepare_dataset
 from pipeline.mlm.batch import MaskModelBatch
 from pipeline.mlm.checkpoint import MaskModelCheckpoint
 from pipeline.mlm.log import MaskModelLog
+from pipeline.mlm.loss import MaskModelLoss
 from pipeline.mlm.model import MaskModel
+from scripts.dataset import prepare_dataset
 from utils.config import load_config
 
 
@@ -69,7 +70,7 @@ def main():
 		collate_fn=batch_factory,
 	)
 
-	criterion = nn.CrossEntropyLoss()
+	criterion = MaskModelLoss()
 
 	optimizer = optim.AdamW(
 		params=model.parameters(),

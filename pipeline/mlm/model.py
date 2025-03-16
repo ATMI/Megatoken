@@ -1,10 +1,19 @@
+from dataclasses import dataclass
+from typing import List
+
 import torch
-from torch import nn
+from torch import nn, Tensor
 
 from model.transformer import GatedTransformer
 
 
 class MaskModel(nn.Module):
+	@dataclass
+	class Output:
+		y: Tensor
+		y_pad: Tensor
+		ratios: List[float]
+
 	def __init__(self, model, tokenizer):
 		super(MaskModel, self).__init__()
 
@@ -21,7 +30,7 @@ class MaskModel(nn.Module):
 
 		z: torch.Tensor,
 		z_pad: torch.Tensor,
-	) -> any:
+	) -> Output:
 		y, y_pad, ratio = self.transformer(x, x_pad, z, z_pad)
 		y = self.classifier(y)
-		return y, y_pad, ratio
+		return MaskModel.Output(y, y_pad, ratio)
