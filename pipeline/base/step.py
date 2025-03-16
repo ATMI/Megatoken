@@ -58,7 +58,7 @@ def test_step(
 	model.eval()
 
 	x = batch.x
-	pred = model(x)
+	pred = model(**x)
 	y = batch.y
 
 	loss = criterion(pred, y)

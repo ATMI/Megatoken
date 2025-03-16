@@ -2,6 +2,7 @@ import importlib
 from typing import Tuple, List
 
 from torch import nn, Tensor
+from torch.nn import functional as fn
 
 from model.positional import AbsolutePositionalEncoding
 
@@ -54,64 +55,48 @@ class GatedTransformer(nn.Module):
 		cls = getattr(mod, "Gate")
 		gate = vars(gate.args) if hasattr(gate, "args") else {}
 
-		self.encoder = nn.ModuleList(
-			GatedEncoderLayer(
-				model_dim=model.dim,
-				head_num=model.encoder.head_num,
-				fc_dim=model.encoder.fc_dim,
-				dropout=model.encoder.dropout,
-				gate=cls(**gate)
-			)
-			for _ in range(model.encoder.layer_num)
-		)
-
-		self.decoder = nn.TransformerDecoder(
-			decoder_layer=nn.TransformerDecoderLayer(
+		# self.encoder = nn.ModuleList(
+		# 	GatedEncoderLayer(
+		# 		model_dim=model.dim,
+		# 		head_num=model.encoder.head_num,
+		# 		fc_dim=model.encoder.fc_dim,
+		# 		dropout=model.encoder.dropout,
+		# 		gate=cls(**gate)
+		# 	)
+		# 	for _ in range(model.encoder.layer_num)
+		# )
+		self.encoder = nn.TransformerEncoder(
+			encoder_layer=nn.TransformerEncoderLayer(
 				d_model=model.dim,
-				nhead=model.decoder.head_num,
-				dim_feedforward=model.decoder.fc_dim,
-				dropout=model.decoder.dropout,
+				nhead=model.encoder.head_num,
+				dim_feedforward=model.encoder.fc_dim,
+				dropout=model.encoder.dropout,
+				activation=fn.gelu,
 				batch_first=True,
 			),
-			num_layers=model.decoder.layer_num,
+			num_layers=model.encoder.layer_num,
 		)
+
+		# self.decoder = nn.TransformerDecoder(
+		# 	decoder_layer=nn.TransformerDecoderLayer(
+		# 		d_model=model.dim,
+		# 		nhead=model.decoder.head_num,
+		# 		dim_feedforward=model.decoder.fc_dim,
+		# 		dropout=model.decoder.dropout,
+		# 		batch_first=True,
+		# 	),
+		# 	num_layers=model.decoder.layer_num,
+		# )
 
 	def forward(
 		self,
 		x: Tensor, x_pad: Tensor,
 		z: Tensor, z_pad: Tensor,
 	) -> Tuple[Tensor, Tensor, List[float]]:
-		ratios = []
+		ratios = [1.0]
 
-		# TODO: remove
-		x = z
-		x_pad = z_pad
+		z = self.embedding(z)
+		z = self.positional(z)
+		y = self.encoder(z, None, z_pad, False)
 
-		x = self.embedding(x)
-		x = self.positional(x)
-
-		e = x
-		e_pad = x_pad
-		x_len = x_pad.size(1) - x_pad.sum(dim=1)
-
-		for encoder in self.encoder:
-			t, t_pad = encoder(e, e_pad)
-			t_len = t_pad.size(1) - t_pad.sum(dim=1)
-
-			ratio = (t_len / x_len).mean(dim=0).item()
-			ratios.append(ratio)
-
-			e, e_pad = t, t_pad
-
-		# z = self.embedding(z)
-		# z = self.positional(z)
-		#
-		# y_pad = z_pad
-		# y = self.decoder(
-		# 	z, e,
-		# 	None, None,
-		# 	z_pad, e_pad,
-		# 	False, False,
-		# )
-
-		return e, e_pad, ratios
+		return y, z_pad, ratios

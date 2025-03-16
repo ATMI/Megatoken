@@ -1,25 +1,25 @@
 train:
   epochs: 10
-  batch: 8
+  batch: 32
 
   scheduler: constant
   warmup: 0.01
-  lr: 0.001
+  lr: 0.0001
 
 test:
-  batch: 16
+  batch: 64
 
 model:
-  dim: 128
+  dim: 768
   max_len: 512
 
   positional:
     dropout: 0.3
 
   encoder:
-    layer_num: 4
-    head_num: 2
-    fc_dim: 256
+    layer_num: 6
+    head_num: 12
+    fc_dim: 3072
     dropout: 0.1
 
     gate:
@@ -28,17 +28,17 @@ model:
   decoder:
     layer_num: 2
     head_num: 2
-    fc_dim: 64
+    fc_dim: 3072
     dropout: 0.1
 
   classifier:
-    dropout: 0.3
+    dropout: 0.1
 
 tokenizer:
-  path: "FacebookAI/roberta-base"
-  vocab: 50265
-  mask: 50264
-  pad: 1
+  path: "google-bert/bert-base-uncased"
+  vocab: 30522
+  mask: 103
+  pad: 0
 
 dataset:
   path: "Yelp/yelp_review_full"
