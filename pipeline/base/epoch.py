@@ -22,7 +22,8 @@ def train_epoch(
 	loader: data.DataLoader[Batch],
 	checkpoint: Checkpoint,
 	log: Log,
-):
+) -> bool:
+	interrupt = False
 	step_num = len(loader)
 	progress_bar = tqdm(total=step_num, desc=f"Train {epoch}")
 
@@ -39,6 +40,7 @@ def train_epoch(
 			)
 		except KeyboardInterrupt as _:
 			checkpoint(model, optimizer, scheduler, None)
+			interrupt = True
 			break
 
 		step = Step(
@@ -58,6 +60,7 @@ def train_epoch(
 		checkpoint(model, optimizer, scheduler, step)
 
 	progress_bar.close()
+	return interrupt
 
 
 def test_epoch(

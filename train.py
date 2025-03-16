@@ -39,10 +39,12 @@ def main():
 
 	log = MaskModelLog(
 		directory=args.output,
+		k=config.log.k,
 	)
 
 	checkpoint = MaskModelCheckpoint(
-		directory=args.output,
+		directory=config.checkpoint.output,
+		time_interval=config.checkpoint.interval,
 	)
 
 	dataset = prepare_dataset(
@@ -76,9 +78,9 @@ def main():
 
 	criterion = MaskModelLoss()
 
-	optimizer = optim.AdamW(
+	optimizer = optim.Adam(
 		params=model.parameters(),
-		lr=config.train.lr
+		lr=config.train.lr,
 	)
 
 	scheduler = get_scheduler(

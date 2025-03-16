@@ -27,7 +27,7 @@ def train(
 	model = model.to(device)
 
 	for epoch in range(epochs):
-		train_epoch(
+		interrupt = train_epoch(
 			epoch=epoch,
 			model=model,
 			device=device,
@@ -40,6 +40,8 @@ def train(
 			log=log,
 			checkpoint=checkpoint,
 		)
+		if interrupt:
+			break
 
 		test_epoch(
 			epoch=epoch,

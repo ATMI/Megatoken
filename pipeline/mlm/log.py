@@ -12,11 +12,11 @@ class MaskModelLog(Log):
 	def __init__(
 		self,
 		directory: str | Path,
-		top_k: int = 1000,
+		k: int = 1000,
 	):
 		super().__init__(directory)
 
-		self.top_k = top_k
+		self.k = k
 
 		self.losses = []
 		self.losses_sum = 0
@@ -27,21 +27,21 @@ class MaskModelLog(Log):
 	def info(self, step: Step) -> Tuple[ConsoleLog, FileLog]:
 		acc, acc_k = self.accuracy(step)
 		ppl = self.perplexity(step.loss)
-		loss_k = self.topk_loss(step.loss)
+		loss_k = self.k_loss(step.loss)
 
 		console = {
-			"loss@K": f"{loss_k:.3f}",
-			"acc@K": f"{acc_k * 100:.2f}",
-			"PPL": f"{ppl:.2f}",
+			f"loss@{self.k}": f"{loss_k:.3f}",
+			f"acc@{self.k}": f"{acc_k * 100:.2f}",
+			"ppl": f"{ppl:.2f}",
 			"ratio": f"{step.pred.ratios[-1] * 100:.2f}",
 			"loss": f"{step.loss:.3f}",
 			"acc": f"{acc * 100:.2f}",
 		}
 
 		file = {
-			"loss@K": loss_k,
-			"acc@K": acc_k,
-			"PPL": ppl,
+			f"loss@{self.k}": loss_k,
+			f"acc@{self.k}": acc_k,
+			"ppl": ppl,
 			"ratios": step.pred.ratios,
 			"loss": step.loss,
 			"acc": acc,
@@ -66,23 +66,23 @@ class MaskModelLog(Log):
 		self.accuracies.append(acc)
 		self.accuracies_sum += acc
 
-		if len(self.accuracies) > self.top_k:
+		if len(self.accuracies) > self.k:
 			a = self.accuracies.pop(0)
 			self.accuracies_sum -= a
 
 		acc_avg = self.accuracies_sum / len(self.accuracies)
 		return acc, acc_avg
 
-	def topk_loss(self, loss: float) -> float:
+	def k_loss(self, loss: float) -> float:
 		"""
-		Calculates top-k loss
+		Calculates k loss
 		:param loss: Loss at step
 		:return: Average loss over K steps
 		"""
 		self.losses.append(loss)
 		self.losses_sum += loss
 
-		if len(self.losses) > self.top_k:
+		if len(self.losses) > self.k:
 			l = self.losses.pop(0)
 			self.losses_sum -= l
 

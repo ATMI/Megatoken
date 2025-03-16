@@ -29,18 +29,24 @@ class Checkpoint:
 		model: nn.Module,
 		optimizer: optim.Optimizer,
 		scheduler: lr_scheduler.LRScheduler,
-		step: Step,
+		step: Optional[Step],
 	) -> None:
-		path = self.directory / f"{step.epoch}" / f"{step.curr}.ckpt"
+		if step is None:
+			path = self.directory / "interrupt.ckpt"
+		else:
+			path = self.directory / f"{step.epoch}" / f"{step.curr}.ckpt"
 		path.parent.mkdir(parents=True, exist_ok=True)
 
 		state = {
-			"epoch": step.epoch,
-			"step": step.curr,
 			"model": model.state_dict(),
 			"optimizer": optimizer.state_dict(),
 			"scheduler": scheduler.state_dict(),
 		}
+
+		if step is not None:
+			state["epoch"] = step.epoch
+			state["step"] = step.curr
+
 		torch.save(state, path)
 
 	def __call__(

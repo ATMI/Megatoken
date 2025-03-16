@@ -1,30 +1,29 @@
 train:
   epochs: 10
-  batch: 4
+  batch: 8
 
-  scheduler: linear
-  warmup: 0.05
-  lr: 0.0001
+  scheduler: constant
+  warmup: 0.01
+  lr: 0.001
 
 test:
-  batch: 256
+  batch: 16
 
 model:
-  dim: 32
+  dim: 128
   max_len: 512
 
   positional:
     dropout: 0.3
 
   encoder:
-    layer_num: 2
+    layer_num: 4
     head_num: 2
-    fc_dim: 64
+    fc_dim: 256
     dropout: 0.1
 
     gate:
       path: "model.gate.nvidia"
-
 
   decoder:
     layer_num: 2
@@ -44,3 +43,10 @@ tokenizer:
 dataset:
   path: "Yelp/yelp_review_full"
   text_col: "text"
+
+checkpoint:
+  interval: 15
+  output: "output"
+
+log:
+  k: 100

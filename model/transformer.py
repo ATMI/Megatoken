@@ -83,6 +83,10 @@ class GatedTransformer(nn.Module):
 	) -> Tuple[Tensor, Tensor, List[float]]:
 		ratios = []
 
+		# TODO: remove
+		x = z
+		x_pad = z_pad
+
 		x = self.embedding(x)
 		x = self.positional(x)
 
@@ -99,15 +103,15 @@ class GatedTransformer(nn.Module):
 
 			e, e_pad = t, t_pad
 
-		z = self.embedding(z)
-		z = self.positional(z)
+		# z = self.embedding(z)
+		# z = self.positional(z)
+		#
+		# y_pad = z_pad
+		# y = self.decoder(
+		# 	z, e,
+		# 	None, None,
+		# 	z_pad, e_pad,
+		# 	False, False,
+		# )
 
-		y_pad = z_pad
-		y = self.decoder(
-			z, e,
-			None, None,
-			z_pad, e_pad,
-			False, False,
-		)
-
-		return y, y_pad, ratios
+		return e, e_pad, ratios

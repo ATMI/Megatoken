@@ -38,9 +38,11 @@ class MaskModelCheckpoint(Checkpoint):
 		model: nn.Module,
 		optimizer: optim.Optimizer,
 		scheduler: lr_scheduler.LRScheduler,
-		step: Step,
+		step: Optional[Step],
 	) -> None:
 		super().save(model, optimizer, scheduler, step)
+		if step is None:
+			return
 
 		self.timestamp = time.time()
 		self.prev_loss = step.loss
@@ -51,31 +53,8 @@ class MaskModelCheckpoint(Checkpoint):
 		if step is None or step.is_last:
 			return True
 
-		# FIXME: maybe its better to remove steps condition.
-		# Checkpoint conditions for steps and time may overlap.
-		# Time sounds more reasonable condition for checkpoint.
-
-		# Save each N steps
-		if step.curr % self.step_interval == 0:
-			return True
-
 		# Save each T minutes
 		if self.timestamp - time.time() >= self.time_interval * 60:
 			return True
-
-		# FIXME: this condition seems to fire only in the beginning when the loss drop is significant
-		# Idx what to do with it)))
-		# Actually I like idea with time, didn't come to my mind before))
-		# Maybe it's enough
-
-		# Also, this class is pretty based.
-		# It can be moved somewhere)
-
-		# Conditions based on previous checkpoints
-		if self.prev_loss is not None:
-			# Save if loss dropped greatly after last checkpoint
-			loss_vel = self.prev_loss - step.loss
-			if loss_vel >= self.loss_thresh:
-				return True
 
 		return False
