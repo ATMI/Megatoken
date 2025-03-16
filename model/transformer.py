@@ -79,7 +79,7 @@ class GatedTransformer(nn.Module):
 	def forward(
 		self,
 		x: Tensor, x_pad: Tensor,
-		y: Tensor, y_pad: Tensor,
+		z: Tensor, z_pad: Tensor,
 	) -> Tuple[Tensor, Tensor, List[float]]:
 		ratios = []
 
@@ -99,13 +99,14 @@ class GatedTransformer(nn.Module):
 
 			e, e_pad = t, t_pad
 
-		y = self.embedding(y)
-		y = self.positional(y)
+		z = self.embedding(z)
+		z = self.positional(z)
 
+		y_pad = z_pad
 		y = self.decoder(
-			y, e,
+			z, e,
 			None, None,
-			y_pad, e_pad,
+			z_pad, e_pad,
 			False, False,
 		)
 

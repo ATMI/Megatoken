@@ -1,7 +1,7 @@
-from typing import Dict
+from typing import Dict, Tuple
 
 import torch
-from torch import nn
+from torch import nn, Tensor
 from torch.nn.utils import rnn
 
 from pipeline.base.batch import Batch
@@ -11,27 +11,38 @@ class MaskModelBatch(Batch):
 
 	def __init__(
 		self,
-		batch,
-		pad_index: int,
-		mask_index: int,
-		causal_mask: bool = True,
-		mask_prob: float = 0.15,
-		ignore_index: int = -100,
+		batch: any,
+
+		pad_token: int,
+		mask_token: int,
+		ignore_token: int,
+		prob: float,
+
+		causal: bool,
 	):
-		self.batch, self.pad_mask = self.collate(batch)
-		self.pad_index = pad_index
-		self.mask_token_id = mask_index
-		self.ignore_index = ignore_index
-		self.mask_prob = mask_prob
-		self.causal_mask = causal_mask
+		super(MaskModelBatch, self).__init__(batch)
 
-		self.masked_x = None
-		self.label = None
-		self.attn_mask = None
+		x, pad = self.collate(batch, pad_token)
+		z, y = self.masking(x, pad, mask_token, ignore_token, prob)
 
-	def collate(self, batch):
+		if causal:
+			attn = nn.Transformer.generate_square_subsequent_mask(
+				x.size(1),
+				torch.bool,
+			)
+			raise NotImplementedError("Attn is not used by the model for now")
+		else:
+			attn = None
+
+		self.x_, self.pad = x, pad
+		self.z_ = z
+		self.y_ = y
+		self.attn = attn
+
+	@staticmethod
+	def collate(batch, pad_token):
 		x = [torch.tensor(x["tokens"]) for x in batch]
-		x = rnn.pad_sequence(x, batch_first=True, padding_value=self.pad_index)
+		x = rnn.pad_sequence(x, batch_first=True, padding_value=pad_token)
 
 		batch_size = x.size(0)
 		seq_len = x.size(1)
@@ -42,6 +53,7 @@ class MaskModelBatch(Batch):
 			dtype=torch.bool,
 			device=x.device
 		)
+
 		for i in range(batch_size):
 			tokens = batch[i]["tokens"]
 			length = len(tokens)
@@ -50,49 +62,44 @@ class MaskModelBatch(Batch):
 		return x, x_pad
 
 	# TODO: make wider masks and mode
-	def masking(self):
-		x_lens = self.pad_mask.size(1) - self.pad_mask.sum(dim=1)
-		num_to_mask = (self.mask_prob * x_lens).int().clamp(min=1)
+	@staticmethod
+	def masking(
+		x: Tensor,
+		x_pad: Tensor,
+		mask_token: int,
+		ignore_token: int,
+		prob: float,
+	) -> Tuple[Tensor, Tensor]:
+		x_len = x_pad.size(1) - x_pad.sum(dim=1)
 
-		mask = torch.zeros_like(self.batch, dtype=torch.bool)
+		num_to_mask = (prob * x_len).int().clamp(min=1)
+		mask = torch.zeros_like(x, dtype=torch.bool)
 
-		for i in range(self.batch.size(0)):
-			candidates = torch.where(~self.pad_mask[i])[0]
-			perm = torch.randperm(x_lens[i])
+		for i in range(x.size(0)):
+			candidates = torch.where(~x_pad[i])[0]
+			perm = torch.randperm(x_len[i])
 			selected = candidates[perm[:num_to_mask[i]]]
 			mask[i, selected] = True
 
-		masked_input = self.batch.clone()
-		masked_input[mask] = self.mask_token_id
+		y = x.clone()
+		y[mask] = mask_token
 
-		labels = torch.full_like(
-			self.batch,
-			fill_value=self.ignore_index
-		)  # -100 = ignore index for CrossEntropyLoss
-		labels[mask] = self.batch[mask]
+		# -100 = ignore index for CrossEntropyLoss
+		labels = torch.full_like(x, fill_value=ignore_token)
+		labels[mask] = x[mask]
 
-		return masked_input, labels
+		return y, labels
 
 	@property
 	def x(self) -> Dict[str, any]:
-		self.masked_x, self.label = self.masking()
+		x = {
+			"x": self.x_,
+			"x_pad": self.pad,
 
-		attn_mask = None
-		if self.causal_mask:
-			attn_mask = nn.Transformer.generate_square_subsequent_mask(
-				self.batch.size(1),
-				dtype=torch.bool
-			)
-
-		# TODO: fix the input names
-		inputs = {
-			"x": self.batch,
-			"mask_x": self.masked_x,
-			"pad": self.pad_mask,
-			"attn": attn_mask
+			"z": self.z_,
+			"z_pad": self.pad,
 		}
-
-		return inputs
+		return x
 
 	@property
 	def y(self) -> torch.Tensor:
@@ -100,5 +107,5 @@ class MaskModelBatch(Batch):
 		Shape: [batch_size * seq_len]
 		:return: RETURN TENSOR FOR CROSS-ENTROPY-LOSS
 		"""
-		flat_label = self.label.flatten()
-		return flat_label
+		y = self.y_.flatten()
+		return y

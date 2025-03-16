@@ -7,7 +7,7 @@ from torch.utils import data
 from transformers import get_scheduler
 
 from pipeline.base.train import train
-# from scripts.dataset import prepare_dataset
+from scripts.dataset import prepare_dataset
 from pipeline.mlm.batch import MaskModelBatch
 from pipeline.mlm.checkpoint import MaskModelCheckpoint
 from pipeline.mlm.log import MaskModelLog
@@ -21,9 +21,9 @@ def main():
 	args.add_argument("output", type=Path)
 	args = args.parse_args()
 
-	if args.output.exists():
-		print("Output file already exists. Aborting.")
-		exit(1)
+	# if args.output.exists():
+	# 	print("Output file already exists. Aborting.")
+	# 	exit(1)
 
 	config = load_config(args.config)
 
@@ -46,26 +46,27 @@ def main():
 		tokenized_col=config.dataset.text_col,
 	)
 
-	batch_kwargs = {
-		"pad_index": config.tokenizer.pad,
-		"mask_index": config.tokenizer.mask,
-		"causal_mask": True,  # TODO: False?
-		"mask_prob": 0.15,
-		"ignore_index": -100,
-	}
+	batch_factory = partial(
+		MaskModelBatch,
+		pad_token=config.tokenizer.pad,
+		mask_token=config.tokenizer.mask,
+		ignore_token=-100,
+		prob=0.15,
+		causal=False,
+	)
 
 	train_loader = data.DataLoader(
 		dataset=dataset["train"],
 		batch_size=config.train.batch,
 		shuffle=True,
-		collate_fn=partial(MaskModelBatch, **batch_kwargs),
+		collate_fn=batch_factory,
 	)
 
 	test_loader = data.DataLoader(
 		dataset=dataset["test"],
 		batch_size=config.test.batch,
 		shuffle=False,
-		collate_fn=partial(MaskModelBatch, **batch_kwargs),
+		collate_fn=batch_factory,
 	)
 
 	criterion = nn.CrossEntropyLoss()

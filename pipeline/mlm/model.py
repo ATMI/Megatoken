@@ -19,9 +19,9 @@ class MaskModel(nn.Module):
 		x: torch.Tensor,
 		x_pad: torch.Tensor,
 
-		y: torch.Tensor,
-		y_pad: torch.Tensor,
+		z: torch.Tensor,
+		z_pad: torch.Tensor,
 	) -> any:
-		y, y_pad, ratio = self.transformer(x, x_pad, y, y_pad)
+		y, y_pad, ratio = self.transformer(x, x_pad, z, z_pad)
 		y = self.classifier(y)
 		return y, y_pad, ratio

@@ -38,6 +38,7 @@ model:
 tokenizer:
   path: "FacebookAI/roberta-base"
   vocab: 50265
+  mask: 2
   pad: 1
 
 dataset:
