@@ -1,9 +1,12 @@
 import json
 from abc import abstractmethod
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Tuple
 
 from pipeline.base.step import Step
+
+ConsoleLog = Dict[str, str]
+FileLog = Dict[str, any]
 
 
 class Log:
@@ -17,17 +20,13 @@ class Log:
 		self.directory = directory
 		self.directory.mkdir(parents=True, exist_ok=True)
 
-
-	def __call__(
-		self,
-		step: Step,
-	) -> Dict:
-		info = self.info(step)
-		self.save(step.epoch, info)
-		return info
+	def __call__(self, step: Step) -> Dict:
+		console, file = self.info(step)
+		self.save(step.epoch, file)
+		return console
 
 	@abstractmethod
-	def info(self, step: Step) -> Dict[str, any]:
+	def info(self, step: Step) -> Tuple[ConsoleLog, FileLog]:
 		pass
 
 	def save(self, epoch: int, info: Dict[str, any]):

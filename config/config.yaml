@@ -3,7 +3,7 @@ train:
   batch: 4
 
   scheduler: linear
-  warmup: 0.1
+  warmup: 0.05
   lr: 0.0001
 
 test:
@@ -38,7 +38,7 @@ model:
 tokenizer:
   path: "FacebookAI/roberta-base"
   vocab: 50265
-  mask: 2
+  mask: 50264
   pad: 1
 
 dataset:

@@ -1,9 +1,9 @@
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Tuple
 
 import math
 
-from pipeline.base.log import Log
+from pipeline.base.log import Log, ConsoleLog, FileLog
 from pipeline.base.step import Step
 
 
@@ -24,21 +24,30 @@ class MaskModelLog(Log):
 		self.accuracies = []
 		self.accuracies_sum = 0
 
-	def info(self, step: Step) -> Dict[str, any]:
-		acc, acc_ = self.accuracy(step)
+	def info(self, step: Step) -> Tuple[ConsoleLog, FileLog]:
+		acc, acc_k = self.accuracy(step)
 		ppl = self.perplexity(step.loss)
-		loss_ = self.topk_loss(step.loss)
+		loss_k = self.topk_loss(step.loss)
 
-		logs = {
-			"loss": step.loss,
-			"loss@K": loss_,
-			"acc": acc,
-			"acc@K": acc_,
-			"ratios": step.pred.ratios,
-			"PPL": ppl,
+		console = {
+			"loss@K": f"{loss_k:.3f}",
+			"acc@K": f"{acc_k * 100:.2f}",
+			"PPL": f"{ppl:.2f}",
+			"ratio": f"{step.pred.ratios[-1] * 100:.2f}",
+			"loss": f"{step.loss:.3f}",
+			"acc": f"{acc * 100:.2f}",
 		}
 
-		return logs
+		file = {
+			"loss@K": loss_k,
+			"acc@K": acc_k,
+			"PPL": ppl,
+			"ratios": step.pred.ratios,
+			"loss": step.loss,
+			"acc": acc,
+		}
+
+		return console, file
 
 	def accuracy(self, step: Step) -> Tuple[float, float]:
 		out = step.pred.y
