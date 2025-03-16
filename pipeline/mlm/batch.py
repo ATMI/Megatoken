@@ -18,14 +18,15 @@ class MaskModelBatch(Batch):
 		mask_token: int,
 		ignore_token: int,
 		prob: float,
-		window_size: int,
+		max_window: int,
+		min_window: int,
 
 		causal: bool,
 	):
 		super(MaskModelBatch, self).__init__(batch)
 
 		x, pad = self.collate(batch, pad_token)
-		z, y = self.masking(x, pad, mask_token, ignore_token, prob, window_size)
+		z, y = self.span_masking(x, pad, mask_token, ignore_token, prob, max_window, min_window)
 
 		if causal:
 			attn = nn.Transformer.generate_square_subsequent_mask(
@@ -36,9 +37,11 @@ class MaskModelBatch(Batch):
 		else:
 			attn = None
 
-		self.x_, self.pad = x, pad
+		self.x_ = x
 		self.z_ = z
 		self.y_ = y
+
+		self.pad = pad
 		self.attn = attn
 
 	@staticmethod
@@ -64,27 +67,27 @@ class MaskModelBatch(Batch):
 		return x, x_pad
 
 	@staticmethod
-	def masking(
-		x: Tensor,
-		x_pad: Tensor,
+	def span_masking(
+		x,
+		x_pad,
 		mask_token: int,
 		ignore_index: int,
 		mask_prob: float,
-		min_window: int = 3,
-		max_window: int = 5,
+		min_span: int = 3,
+		max_span: int = 5,
 	):
 		x_lens = x_pad.size(1) - x_pad.sum(dim=1)
-		num_to_mask = (mask_prob * x_lens).int().clamp(min=1)
+		nums_to_mask = (mask_prob * x_lens).int().clamp(min=1)
 
 		mask = torch.zeros_like(x, dtype=torch.bool)
 
 		for i in range(x.size(0)):
-			window_size = random.randint(min_window, max_window)
+			span_size = random.randint(min_span, max_span)
 			x_len = x_lens[i].item()
-			seq_num_to_mask = num_to_mask[i].item()
+			num_mask_tokens = nums_to_mask[i].item()  # Number of tokens to mask in current sequence
 
-			num_splits = int(x_len // window_size)  # Split sequence into equal spans
-			num_spans = max(seq_num_to_mask // window_size, 1)  # Number of spans we must mask
+			num_splits = int(x_len // span_size)  # Split sequence into equal spans
+			num_spans = max(num_mask_tokens // span_size, 1)  # Number of spans we must mask
 
 			# Randomly select spans to mask
 			spans = torch.arange(num_splits, dtype=torch.int)
@@ -92,10 +95,10 @@ class MaskModelBatch(Batch):
 			selected_spans = spans[perm[:num_spans]]
 
 			# Convert spans idx to token idx
-			spans_beg = selected_spans * window_size
-			masked_tokens = (spans_beg.unsqueeze(1) + torch.arange(window_size)).flatten()
+			spans_start_ids = selected_spans * span_size
+			masked_tokens_ids = (spans_start_ids.unsqueeze(1) + torch.arange(span_size)).flatten()
 
-			mask[i, masked_tokens] = True
+			mask[i, masked_tokens_ids] = True
 
 		masked_input = x.clone()
 		masked_input[mask] = mask_token
