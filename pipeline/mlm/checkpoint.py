@@ -54,7 +54,7 @@ class MaskModelCheckpoint(Checkpoint):
 			return True
 
 		# Save each T minutes
-		if self.timestamp - time.time() >= self.time_interval * 60:
+		if time.time() - self.timestamp >= self.time_interval * 60:
 			return True
 
 		return False
