@@ -53,6 +53,7 @@ def main():
 		mask_token=config.tokenizer.mask,
 		ignore_token=-100,
 		prob=0.15,
+		window_size=3,
 		causal=False,
 	)
 
