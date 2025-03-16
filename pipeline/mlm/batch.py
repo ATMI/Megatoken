@@ -1,3 +1,4 @@
+import random
 from typing import Dict, Tuple
 
 import torch
@@ -17,18 +18,20 @@ class MaskModelBatch(Batch):
 		mask_token: int,
 		ignore_token: int,
 		prob: float,
+		max_window: int,
+		min_window: int,
 
 		causal: bool,
 	):
 		super(MaskModelBatch, self).__init__(batch)
 
 		x, pad = self.collate(batch, pad_token)
-		z, y = self.masking(x, pad, mask_token, ignore_token, prob)
+		z, y = self.span_masking(x, pad, mask_token, ignore_token, prob, max_window, min_window)
 
 		if causal:
 			attn = nn.Transformer.generate_square_subsequent_mask(
 				x.size(1),
-				torch.bool,
+				dtype=torch.bool,
 			)
 			raise NotImplementedError("Attn is not used by the model for now")
 		else:
@@ -64,34 +67,48 @@ class MaskModelBatch(Batch):
 
 		return x, x_pad
 
-	# TODO: make wider masks and mode
 	@staticmethod
-	def masking(
-		x: Tensor,
-		x_pad: Tensor,
+	def span_masking(
+		x,
+		x_pad,
 		mask_token: int,
-		ignore_token: int,
-		prob: float,
-	) -> Tuple[Tensor, Tensor]:
-		x_len = x_pad.size(1) - x_pad.sum(dim=1)
+		ignore_index: int,
+		mask_prob: float,
+		min_span: int = 3,
+		max_span: int = 5,
+	):
+		x_lens = x_pad.size(1) - x_pad.sum(dim=1)
+		nums_to_mask = (mask_prob * x_lens).int().clamp(min=1)
 
-		num_to_mask = (prob * x_len).int().clamp(min=1)
 		mask = torch.zeros_like(x, dtype=torch.bool)
 
 		for i in range(x.size(0)):
-			candidates = torch.where(~x_pad[i])[0]
-			perm = torch.randperm(x_len[i])
-			selected = candidates[perm[:num_to_mask[i]]]
-			mask[i, selected] = True
+			span_size = random.randint(min_span, max_span)
+			x_len = x_lens[i].item()
+			num_mask_tokens = nums_to_mask[i].item()  # Number of tokens to mask in current sequence
 
-		y = x.clone()
-		y[mask] = mask_token
+			num_splits = int(x_len // span_size)  # Split sequence into equal spans
+			num_spans = max(num_mask_tokens // span_size, 1)  # Number of spans we must mask
 
-		# -100 = ignore index for CrossEntropyLoss
-		labels = torch.full_like(x, fill_value=ignore_token)
+			# Randomly select spans to mask
+			spans = torch.arange(num_splits, dtype=torch.int)
+			perm = torch.randperm(num_splits)
+			selected_spans = spans[perm[:num_spans]]
+
+			# Convert spans idx to token idx
+			spans_start_ids = selected_spans * span_size
+			masked_tokens_ids = (spans_start_ids.unsqueeze(1) + torch.arange(span_size)).flatten()
+
+			mask[i, masked_tokens_ids] = True
+
+		masked_input = x.clone()
+		masked_input[mask] = mask_token
+
+		labels = torch.full_like(x, fill_value=ignore_index)
 		labels[mask] = x[mask]
 
-		return y, labels
+		return masked_input, labels
+
 
 	def to(self, device: torch.device):
 		self.x_ = self.x_.to(device)
