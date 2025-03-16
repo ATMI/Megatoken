@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Dict, Tuple
 
-import torch
+import math
 
 from pipeline.base.log import Log
 from pipeline.base.step import Step
@@ -19,10 +19,10 @@ class MaskModelLog(Log):
 		self.top_k = top_k
 
 		self.losses = []
-		self.losses_sum = []
+		self.losses_sum = 0
 
 		self.accuracies = []
-		self.accuracies_sum = []
+		self.accuracies_sum = 0
 
 	def info(self, step: Step) -> Dict[str, any]:
 		acc, acc_ = self.accuracy(step)
@@ -34,23 +34,23 @@ class MaskModelLog(Log):
 			"loss@K": loss_,
 			"acc": acc,
 			"acc@K": acc_,
-			"ratios": step.pred[2],
+			"ratios": step.pred.ratios,
 			"PPL": ppl,
 		}
 
 		return logs
 
 	def accuracy(self, step: Step) -> Tuple[float, float]:
-		out = step.pred
-		# TODO: fix access for label and ignore_index
-		label = step.batch.label
-		ignore_index = step.batch.ignore_index
+		out = step.pred.y
+		# TODO: fix access for label and ignore_token
+		label = step.batch.y
+		ignore_index = step.batch.ignore_token
 
 		y_pred = out.argmax(dim=-1)
 		correct = (y_pred == label).sum().item()
-		num_labels = (
-			label != ignore_index).sum().item()  # Number of tokens to predict
 
+		# Number of tokens to predict
+		num_labels = (label != ignore_index).sum().item()
 		acc = correct / num_labels
 
 		# Calculate Accuracy@k
@@ -58,10 +58,10 @@ class MaskModelLog(Log):
 		self.accuracies_sum += acc
 
 		if len(self.accuracies) > self.top_k:
-			a = self.accuracies_sum.pop(0)
+			a = self.accuracies.pop(0)
 			self.accuracies_sum -= a
 
-		acc_avg = self.accuracies_sum / self.accuracies
+		acc_avg = self.accuracies_sum / len(self.accuracies)
 		return acc, acc_avg
 
 	def topk_loss(self, loss: float) -> float:
@@ -81,4 +81,4 @@ class MaskModelLog(Log):
 		return loss_avg
 
 	def perplexity(self, loss) -> float:
-		return torch.exp(loss).item()
+		return math.exp(loss)

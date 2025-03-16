@@ -28,6 +28,7 @@ def train_step(
 	criterion: nn.Module,
 	optimizer: optim.Optimizer,
 	scheduler: lr_scheduler.LRScheduler,
+
 	batch: Batch,
 ):
 	torch.set_grad_enabled(True)
@@ -45,7 +46,7 @@ def train_step(
 	scheduler.step()
 	torch.cuda.empty_cache()
 
-	return pred, loss
+	return pred, loss.item()
 
 
 def test_step(
@@ -58,9 +59,9 @@ def test_step(
 
 	x = batch.x
 	pred = model(x)
-
 	y = batch.y
+
 	loss = criterion(pred, y)
 	torch.cuda.empty_cache()
 
-	return pred, loss
+	return pred, loss.item()

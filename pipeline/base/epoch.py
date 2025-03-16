@@ -1,3 +1,4 @@
+import torch
 from torch import nn, optim
 from torch.optim import lr_scheduler
 from torch.utils import data
@@ -12,6 +13,7 @@ from pipeline.base.step import train_step, test_step, Step
 def train_epoch(
 	epoch: int,
 	model: nn.Module,
+	device: torch.device,
 
 	criterion: nn.Module,
 	optimizer: optim.Optimizer,
@@ -25,6 +27,8 @@ def train_epoch(
 	progress_bar = tqdm(total=step_num, desc=f"Train {epoch}")
 
 	for step, batch in enumerate(loader):
+		batch = batch.to(device)
+
 		try:
 			pred, loss = train_step(
 				model=model,
@@ -59,6 +63,7 @@ def train_epoch(
 def test_epoch(
 	epoch: int,
 	model: nn.Module,
+	device: torch.device,
 
 	criterion: nn.Module,
 
@@ -69,6 +74,8 @@ def test_epoch(
 	progress_bar = tqdm(total=step_num, desc=f"Test  {epoch}")
 
 	for step, batch in enumerate(loader):
+		batch = batch.to(device)
+
 		pred, loss = test_step(
 			model=model,
 			criterion=criterion,

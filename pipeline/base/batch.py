@@ -1,10 +1,16 @@
 from abc import abstractmethod
 from typing import Dict
 
+import torch
+
 
 class Batch:
 	@abstractmethod
 	def __init__(self, batch):
+		pass
+
+	@abstractmethod
+	def to(self, device: torch.device) -> "Batch":
 		pass
 
 	@property

@@ -34,10 +34,13 @@ class MaskModelBatch(Batch):
 		else:
 			attn = None
 
-		self.x_, self.pad = x, pad
+		self.x_ = x
 		self.z_ = z
 		self.y_ = y
+
+		self.pad = pad
 		self.attn = attn
+		self.ignore_token = ignore_token
 
 	@staticmethod
 	def collate(batch, pad_token):
@@ -89,6 +92,17 @@ class MaskModelBatch(Batch):
 		labels[mask] = x[mask]
 
 		return y, labels
+
+	def to(self, device: torch.device):
+		self.x_ = self.x_.to(device)
+		self.y_ = self.y_.to(device)
+		self.z_ = self.z_.to(device)
+
+		self.pad = self.pad.to(device)
+		if self.attn is not None:
+			self.attn = self.attn.to(device)
+
+		return self
 
 	@property
 	def x(self) -> Dict[str, any]:

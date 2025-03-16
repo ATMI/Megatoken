@@ -2,6 +2,7 @@ import argparse
 from functools import partial
 from pathlib import Path
 
+import torch
 from torch import optim
 from torch.utils import data
 from transformers import get_scheduler
@@ -17,6 +18,8 @@ from utils.config import load_config
 
 
 def main():
+	torch.autograd.set_detect_anomaly(True)
+
 	args = argparse.ArgumentParser()
 	args.add_argument("config", type=Path)
 	args.add_argument("output", type=Path)
@@ -28,6 +31,7 @@ def main():
 
 	config = load_config(args.config)
 
+	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	model = MaskModel(
 		model=config.model,
 		tokenizer=config.tokenizer,
@@ -86,6 +90,7 @@ def main():
 
 	train(
 		epochs=config.train.epochs,
+		device=device,
 		model=model,
 
 		criterion=criterion,

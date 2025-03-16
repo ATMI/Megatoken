@@ -1,3 +1,4 @@
+import torch
 from torch import nn, optim
 from torch.optim import lr_scheduler
 from torch.utils import data
@@ -10,6 +11,7 @@ from pipeline.base.epoch import train_epoch, test_epoch
 
 def train(
 	epochs: int,
+	device: torch.device,
 	model: nn.Module,
 
 	criterion: nn.Module,
@@ -22,11 +24,14 @@ def train(
 	log: Log,
 	checkpoint: Checkpoint,
 ):
+	model = model.to(device)
+
 	for epoch in range(epochs):
 		train_epoch(
 			epoch=epoch,
-
 			model=model,
+			device=device,
+
 			criterion=criterion,
 			optimizer=optimizer,
 			scheduler=scheduler,
@@ -38,8 +43,9 @@ def train(
 
 		test_epoch(
 			epoch=epoch,
-
 			model=model,
+			device=device,
+
 			criterion=criterion,
 
 			loader=test_loader,
