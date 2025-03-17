@@ -22,7 +22,6 @@ def main():
 
 	args = argparse.ArgumentParser()
 	args.add_argument("config", type=Path)
-	args.add_argument("output", type=Path)
 	args = args.parse_args()
 
 	# if args.output.exists():
@@ -38,7 +37,7 @@ def main():
 	)
 
 	log = MaskModelLog(
-		directory=args.output,
+		directory=config.log.output,
 		k=config.log.k,
 	)
 
@@ -59,8 +58,6 @@ def main():
 		mask_token=config.tokenizer.mask,
 		ignore_token=-100,
 		prob=0.15,
-		min_window=3,
-		max_window=5,
 		causal=False,
 	)
 

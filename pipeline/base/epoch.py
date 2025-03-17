@@ -44,6 +44,7 @@ def train_epoch(
 			break
 
 		step = Step(
+			train=True,
 			epoch=epoch,
 			curr=step,
 			last=step_num,
@@ -86,6 +87,7 @@ def test_epoch(
 		)
 
 		step = Step(
+			train=False,
 			epoch=epoch,
 			curr=step,
 			last=step_num,

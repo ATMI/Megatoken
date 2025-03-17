@@ -22,15 +22,16 @@ class Log:
 
 	def __call__(self, step: Step) -> Dict:
 		console, file = self.info(step)
-		self.save(step.epoch, file)
+		self.save(step.train, step.epoch, file)
 		return console
 
 	@abstractmethod
 	def info(self, step: Step) -> Tuple[ConsoleLog, FileLog]:
 		pass
 
-	def save(self, epoch: int, info: Dict[str, any]):
-		file = self.directory / f"{epoch}" / "log.json"
+	def save(self, train: bool, epoch: int, info: Dict[str, any]):
+		subdir = "train" if train else "test"
+		file = self.directory / subdir / f"{epoch}.json"
 		file.parent.mkdir(parents=True, exist_ok=True)
 
 		with file.open("a") as f:

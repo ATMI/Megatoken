@@ -1,13 +1,13 @@
 train:
   epochs: 10
-  batch: 32
+  batch: 24
 
   scheduler: constant
   warmup: 0.01
   lr: 0.0001
 
 test:
-  batch: 64
+  batch: 48
 
 model:
   dim: 768
@@ -17,7 +17,7 @@ model:
     dropout: 0.3
 
   encoder:
-    layer_num: 6
+    layer_num: 4
     head_num: 12
     fc_dim: 3072
     dropout: 0.1
@@ -27,7 +27,7 @@ model:
 
   decoder:
     layer_num: 2
-    head_num: 2
+    head_num: 12
     fc_dim: 3072
     dropout: 0.1
 
@@ -46,7 +46,8 @@ dataset:
 
 checkpoint:
   interval: 15
-  output: "output"
+  output: "output/crossBERT/checkpoint"
 
 log:
   k: 100
+  output: "output/crossBERT/log"

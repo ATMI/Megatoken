@@ -1,38 +1,40 @@
-import csv
+import json
 from collections import defaultdict
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 
 
-def log_load(path: Path):
-	data = defaultdict(list)
+def log_load(path: str | Path):
+	if isinstance(path, str):
+		path = Path(path)
 
-	with path.open("r") as file:
-		reader = csv.DictReader(file, delimiter="\t")
-		for row in reader:
-			for k, v in row.items():
-				data[k].append(float(v))
+	data = defaultdict(list)
+	paths = sorted(path.glob("*.json")) if path.is_dir() else [path]
+
+	for path in paths:
+		with path.open("r") as file:
+			for i, line in enumerate(file):
+				row = json.loads(line)
+				for k, v in row.items():
+					data[k].append(v)
 
 	return data
 
 
 def main():
 	# prop = "acc_"
-	prop = "ratio"
+	prop = "acc@100"
 	paths = [
-		# "checkpoint/0305_1128/train/0/0.tsv",
-
-		# ("checkpoint/0306_2030/train/0/0.tsv", "A"),
-		("checkpoint/0306_2143/train/0/0.tsv", "B"),
+		("output/zeroBERT/log/train", "zero-BERT"),
+		("output/crossBERT/log/train", "cross-BERT"),
 	]
 
 	plt.figure()
 	for path, label in paths:
-		path = Path(path)
-		data = log_load(path)
+		log = log_load(path)
 
-		y = data[prop] #[1000:]
+		y = log[prop]
 		x = [i for i in range(len(y))]
 
 		plt.plot(x, y, label=label)

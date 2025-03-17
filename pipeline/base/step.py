@@ -9,6 +9,7 @@ from pipeline.base.batch import Batch
 
 @dataclass
 class Step:
+	train: bool
 	epoch: int
 	curr: int
 	last: int

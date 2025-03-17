@@ -21,6 +21,7 @@ class GatedEncoderLayer(nn.Module):
 			d_model=model_dim,
 			nhead=head_num,
 			dim_feedforward=fc_dim,
+			activation=fn.gelu,
 			dropout=dropout,
 			batch_first=True,
 		)
@@ -77,16 +78,16 @@ class GatedTransformer(nn.Module):
 			num_layers=model.encoder.layer_num,
 		)
 
-		# self.decoder = nn.TransformerDecoder(
-		# 	decoder_layer=nn.TransformerDecoderLayer(
-		# 		d_model=model.dim,
-		# 		nhead=model.decoder.head_num,
-		# 		dim_feedforward=model.decoder.fc_dim,
-		# 		dropout=model.decoder.dropout,
-		# 		batch_first=True,
-		# 	),
-		# 	num_layers=model.decoder.layer_num,
-		# )
+		self.decoder = nn.TransformerDecoder(
+			decoder_layer=nn.TransformerDecoderLayer(
+				d_model=model.dim,
+				nhead=model.decoder.head_num,
+				dim_feedforward=model.decoder.fc_dim,
+				dropout=model.decoder.dropout,
+				batch_first=True,
+			),
+			num_layers=model.decoder.layer_num,
+		)
 
 	def forward(
 		self,
@@ -95,8 +96,21 @@ class GatedTransformer(nn.Module):
 	) -> Tuple[Tensor, Tensor, List[float]]:
 		ratios = [1.0]
 
+		x = self.embedding(x)
+		x = self.positional(x)
+
+		e = self.encoder(x, None, x_pad, False)
+		e_pad = x_pad
+
 		z = self.embedding(z)
 		z = self.positional(z)
-		y = self.encoder(z, None, z_pad, False)
 
-		return y, z_pad, ratios
+		y = self.decoder(
+			z, e,
+			None, None,
+			z_pad, e_pad,
+			False, False,
+		)
+		y_pad = z_pad
+
+		return y, y_pad, ratios
