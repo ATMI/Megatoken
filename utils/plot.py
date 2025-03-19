@@ -28,11 +28,12 @@ def log_load(path: str | Path, start: int = 0, end: int = -1):
 
 def main():
 	start = 100
-	end = 3500
+	end = 150
 	prop = "acc@100"
 	paths = [
 		("output/log/zeroBERT0/train/0.json", "zero-BERT0"),
 		("output/log/zeroBERT1/train/0.json", "zero-BERT1"),
+		("output/log/crossBERT0/train/0.json", "cross-BERT0"),
 	]
 
 	plt.figure()

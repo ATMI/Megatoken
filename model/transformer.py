@@ -38,27 +38,27 @@ class GatedTransformer(nn.Module):
 	def __init__(self, model, tokenizer):
 		super(GatedTransformer, self).__init__()
 
-		self.positional = AbsolutePositionalEncoding(
+		self.positional_x = LearnablePositionalEncoding(
 			model_dim=model.dim,
 			max_len=model.max_len,
 			dropout=model.positional.dropout,
 		)
-		# self.positional_z = LearnablePositionalEncoding(
-		# 	model_dim=model.dim,
-		# 	max_len=model.max_len,
-		# 	dropout=model.positional.dropout,
-		# )
+		self.positional_z = LearnablePositionalEncoding(
+			model_dim=model.dim,
+			max_len=model.max_len,
+			dropout=model.positional.dropout,
+		)
 
-		self.embedding = nn.Embedding(
-			num_embeddings=model.dim,
+		self.embedding_x = nn.Embedding(
+			num_embeddings=tokenizer.vocab,
 			embedding_dim=model.dim,
 			padding_idx=tokenizer.pad,
 		)
-		# self.embedding_z = nn.Embedding(
-		# 	num_embeddings=tokenizer.vocab,
-		# 	embedding_dim=model.dim,
-		# 	padding_idx=tokenizer.pad,
-		# )
+		self.embedding_z = nn.Embedding(
+			num_embeddings=tokenizer.vocab,
+			embedding_dim=model.dim,
+			padding_idx=tokenizer.pad,
+		)
 
 		# gate = model.encoder.gate
 		# mod = gate.path
@@ -89,17 +89,17 @@ class GatedTransformer(nn.Module):
 			num_layers=model.encoder.layer_num,
 		)
 
-		# self.decoder = nn.TransformerDecoder(
-		# 	decoder_layer=nn.TransformerDecoderLayer(
-		# 		d_model=model.dim,
-		# 		nhead=model.decoder.head_num,
-		# 		dim_feedforward=model.decoder.fc_dim,
-		# 		dropout=model.decoder.dropout,
-		# 		activation=fn.gelu,
-		# 		batch_first=True,
-		# 	),
-		# 	num_layers=model.decoder.layer_num,
-		# )
+		self.decoder = nn.TransformerDecoder(
+			decoder_layer=nn.TransformerDecoderLayer(
+				d_model=model.dim,
+				nhead=model.decoder.head_num,
+				dim_feedforward=model.decoder.fc_dim,
+				dropout=model.decoder.dropout,
+				activation=fn.gelu,
+				batch_first=True,
+			),
+			num_layers=model.decoder.layer_num,
+		)
 
 	@staticmethod
 	def compression(inp_pad: Tensor, out_pad: Tensor) -> float:
@@ -121,20 +121,20 @@ class GatedTransformer(nn.Module):
 		x = z
 		x_pad = z_pad
 
-		x = self.embedding(x)
-		x = self.positional(x)
+		x = self.embedding_x(x)
+		x = self.positional_x(x)
 
 		m = self.encoder(x)
 		m_pad = x_pad
 
-		# z = self.embedding(z)
-		# z = self.positional(z)
-		#
-		# y = self.decoder(
-		# 	z, m,
-		# 	None, None,
-		# 	z_pad, m_pad,
-		# 	False, False,
-		# )
+		z = self.embedding_z(z)
+		z = self.positional_z(z)
 
-		return m, m_pad, ratios
+		y = self.decoder(
+			z, m,
+			None, None,
+			z_pad, m_pad,
+			False, False,
+		)
+
+		return y, m_pad, ratios
