@@ -1,13 +1,13 @@
 train:
   epochs: 10
-  batch: 24
+  batch: 32
 
   scheduler: constant
   warmup: 0.01
   lr: 0.0001
 
 test:
-  batch: 48
+  batch: 64
 
 model:
   dim: 768
@@ -50,8 +50,8 @@ dataset:
 
 checkpoint:
   interval: 60
-  output: "output/checkpoint/zeroBERT/"
+  output: "output/checkpoint/zeroBERT2/"
 
 log:
   k: 100
-  output: "output/log/zeroBERT/"
+  output: "output/log/zeroBERT2/"

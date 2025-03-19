@@ -4,7 +4,7 @@ from typing import Tuple, List, Optional
 from torch import nn, Tensor
 from torch.nn import functional as fn
 
-from model.positional import LearnablePositionalEncoding
+from model.positional import LearnablePositionalEncoding, AbsolutePositionalEncoding
 
 
 class GatedEncoderLayer(nn.Module):
@@ -38,24 +38,34 @@ class GatedTransformer(nn.Module):
 	def __init__(self, model, tokenizer):
 		super(GatedTransformer, self).__init__()
 
-		self.positional = LearnablePositionalEncoding(
+		self.positional = AbsolutePositionalEncoding(
 			model_dim=model.dim,
 			max_len=model.max_len,
 			dropout=model.positional.dropout,
 		)
+		# self.positional_z = LearnablePositionalEncoding(
+		# 	model_dim=model.dim,
+		# 	max_len=model.max_len,
+		# 	dropout=model.positional.dropout,
+		# )
 
 		self.embedding = nn.Embedding(
-			num_embeddings=tokenizer.vocab,
+			num_embeddings=model.dim,
 			embedding_dim=model.dim,
 			padding_idx=tokenizer.pad,
 		)
+		# self.embedding_z = nn.Embedding(
+		# 	num_embeddings=tokenizer.vocab,
+		# 	embedding_dim=model.dim,
+		# 	padding_idx=tokenizer.pad,
+		# )
 
-		gate = model.encoder.gate
-		mod = gate.path
-		mod = importlib.import_module(mod)
-
-		cls = getattr(mod, "Gate")
-		gate = vars(gate.args) if hasattr(gate, "args") else {}
+		# gate = model.encoder.gate
+		# mod = gate.path
+		# mod = importlib.import_module(mod)
+		#
+		# cls = getattr(mod, "Gate")
+		# gate = vars(gate.args) if hasattr(gate, "args") else {}
 
 		# self.encoder = nn.ModuleList(
 		# 	GatedEncoderLayer(
@@ -79,17 +89,17 @@ class GatedTransformer(nn.Module):
 			num_layers=model.encoder.layer_num,
 		)
 
-		self.decoder = nn.TransformerDecoder(
-			decoder_layer=nn.TransformerDecoderLayer(
-				d_model=model.dim,
-				nhead=model.decoder.head_num,
-				dim_feedforward=model.decoder.fc_dim,
-				dropout=model.decoder.dropout,
-				activation=fn.gelu,
-				batch_first=True,
-			),
-			num_layers=model.decoder.layer_num,
-		)
+		# self.decoder = nn.TransformerDecoder(
+		# 	decoder_layer=nn.TransformerDecoderLayer(
+		# 		d_model=model.dim,
+		# 		nhead=model.decoder.head_num,
+		# 		dim_feedforward=model.decoder.fc_dim,
+		# 		dropout=model.decoder.dropout,
+		# 		activation=fn.gelu,
+		# 		batch_first=True,
+		# 	),
+		# 	num_layers=model.decoder.layer_num,
+		# )
 
 	@staticmethod
 	def compression(inp_pad: Tensor, out_pad: Tensor) -> float:
@@ -109,19 +119,22 @@ class GatedTransformer(nn.Module):
 		ratios = [1.0]
 
 		x = z
+		x_pad = z_pad
+
 		x = self.embedding(x)
 		x = self.positional(x)
-		y = self.encoder(x)
+
+		m = self.encoder(x)
+		m_pad = x_pad
 
 		# z = self.embedding(z)
 		# z = self.positional(z)
 		#
 		# y = self.decoder(
-		# 	z, e,
+		# 	z, m,
 		# 	None, None,
-		# 	z_pad, z_pad,
+		# 	z_pad, m_pad,
 		# 	False, False,
 		# )
-		# y_pad = z_pad
 
-		return y, z_pad, ratios
+		return m, m_pad, ratios

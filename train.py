@@ -18,7 +18,7 @@ from utils.config import load_config
 
 
 def main():
-	torch.random.manual_seed(42)
+	torch.random.manual_seed(1337)
 
 	args = argparse.ArgumentParser()
 	args.add_argument("config", type=Path)
