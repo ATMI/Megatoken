@@ -27,13 +27,14 @@ def log_load(path: str | Path, start: int = 0, end: int = -1):
 
 
 def main():
-	start = 100
-	end = 150
+	start = 1000
+	end = 8000
 	prop = "acc@100"
 	paths = [
 		("output/log/zeroBERT0/train/0.json", "zero-BERT0"),
 		("output/log/zeroBERT1/train/0.json", "zero-BERT1"),
 		("output/log/crossBERT0/train/0.json", "cross-BERT0"),
+		("output/log/crossBERT1/train/0.json", "cross-BERT1"),
 	]
 
 	plt.figure()
@@ -41,7 +42,7 @@ def main():
 		log = log_load(path, start, end)
 
 		y = log[prop]
-		x = [i for i in range(len(y))]
+		x = [start + i for i in range(len(y))]
 
 		plt.plot(x, y, label=label)
 
