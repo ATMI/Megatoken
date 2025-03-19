@@ -18,7 +18,7 @@ from utils.config import load_config
 
 
 def main():
-	torch.autograd.set_detect_anomaly(True)
+	torch.random.manual_seed(42)
 
 	args = argparse.ArgumentParser()
 	args.add_argument("config", type=Path)

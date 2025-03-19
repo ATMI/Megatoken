@@ -8,8 +8,8 @@ class AbsolutePositionalEncoding(nn.Module):
 	def __init__(
 		self,
 		model_dim: int,
-		dropout: float = 0.1,
-		max_len: int = 512
+		max_len: int,
+		dropout: float,
 	):
 		super().__init__()
 		self.dropout = nn.Dropout(p=dropout)
@@ -28,3 +28,29 @@ class AbsolutePositionalEncoding(nn.Module):
 		"""
 		x = x + self.pe[:, :x.size(1)]
 		return self.dropout(x)
+
+
+class LearnablePositionalEncoding(nn.Module):
+	def __init__(
+		self,
+		model_dim: int,
+		max_len: int,
+		dropout: float,
+	):
+		super(LearnablePositionalEncoding, self).__init__()
+		self.dropout = nn.Dropout(p=dropout)
+		self.positional = nn.Embedding(
+			num_embeddings=max_len,
+			embedding_dim=model_dim,
+		)
+
+	def forward(self, x: torch.Tensor) -> torch.Tensor:
+		indices = torch.arange(x.size(1), device=x.device)
+
+		pos = self.positional(indices)
+		pos = pos.unsqueeze(0)
+
+		x = x + pos
+		x = self.dropout(x)
+
+		return x

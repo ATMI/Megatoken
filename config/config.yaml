@@ -14,16 +14,20 @@ model:
   max_len: 512
 
   positional:
-    dropout: 0.3
+    dropout: 0.1
 
   encoder:
-    layer_num: 4
+    layer_num: 6
     head_num: 12
     fc_dim: 3072
     dropout: 0.1
 
     gate:
       path: "model.gate.nvidia"
+      args:
+        c: 0
+        temperature: 0.1
+        hard: False
 
   decoder:
     layer_num: 2
@@ -45,9 +49,9 @@ dataset:
   text_col: "text"
 
 checkpoint:
-  interval: 15
-  output: "output/crossBERT/checkpoint"
+  interval: 60
+  output: "output/checkpoint/zeroBERT/"
 
 log:
   k: 100
-  output: "output/crossBERT/log"
+  output: "output/log/zeroBERT/"

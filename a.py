@@ -67,3 +67,31 @@ class Gate(nn.Module):
 		y = torch.cat(y, dim=1)
 
 		return y, x_pad
+
+
+def main():
+	torch.random.manual_seed(42)
+	batch_size = 2
+	embed_dim = 16
+	seq_len = 128
+
+	x = torch.randn(
+		(batch_size, seq_len, embed_dim),
+		dtype=torch.float,
+		requires_grad=True,
+	)
+	x_pad = torch.tensor(
+		[[0] * (seq_len - i) + [1] * i for i in range(batch_size)],
+		dtype=torch.bool,
+	)
+
+	torch.autograd.set_detect_anomaly(True)
+	gate = Gate(c=0, temperature=0.1, hard=True)
+	y, y_pad = gate(x, x_pad)
+
+	y.sum().backward()
+	print(x.grad)
+
+
+if __name__ == "__main__":
+	main()

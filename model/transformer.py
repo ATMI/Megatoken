@@ -1,10 +1,10 @@
 import importlib
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 
 from torch import nn, Tensor
 from torch.nn import functional as fn
 
-from model.positional import AbsolutePositionalEncoding
+from model.positional import LearnablePositionalEncoding
 
 
 class GatedEncoderLayer(nn.Module):
@@ -14,7 +14,7 @@ class GatedEncoderLayer(nn.Module):
 		head_num: int,
 		fc_dim: int,
 		dropout: float,
-		gate: nn.Module,
+		gate: Optional[nn.Module],
 	):
 		super(GatedEncoderLayer, self).__init__()
 		self.encoder = nn.TransformerEncoderLayer(
@@ -29,7 +29,8 @@ class GatedEncoderLayer(nn.Module):
 
 	def forward(self, x: Tensor, x_pad: Tensor) -> Tuple[Tensor, Tensor]:
 		x = self.encoder(x, None, x_pad, False)
-		x, x_pad = self.gate(x, x_pad)
+		if self.gate is not None:
+			x, x_pad = self.gate(x, x_pad)
 		return x, x_pad
 
 
@@ -37,7 +38,7 @@ class GatedTransformer(nn.Module):
 	def __init__(self, model, tokenizer):
 		super(GatedTransformer, self).__init__()
 
-		self.positional = AbsolutePositionalEncoding(
+		self.positional = LearnablePositionalEncoding(
 			model_dim=model.dim,
 			max_len=model.max_len,
 			dropout=model.positional.dropout,
@@ -84,10 +85,21 @@ class GatedTransformer(nn.Module):
 				nhead=model.decoder.head_num,
 				dim_feedforward=model.decoder.fc_dim,
 				dropout=model.decoder.dropout,
+				activation=fn.gelu,
 				batch_first=True,
 			),
 			num_layers=model.decoder.layer_num,
 		)
+
+	@staticmethod
+	def compression(inp_pad: Tensor, out_pad: Tensor) -> float:
+		inp_lengths = inp_pad.size(1) - inp_pad.sum(dim=1)
+		out_lengths = out_pad.size(1) - out_pad.sum(dim=1)
+
+		ratio = (out_lengths / inp_lengths).mean()
+		ratio = ratio.item()
+
+		return ratio
 
 	def forward(
 		self,
@@ -96,21 +108,20 @@ class GatedTransformer(nn.Module):
 	) -> Tuple[Tensor, Tensor, List[float]]:
 		ratios = [1.0]
 
+		x = z
 		x = self.embedding(x)
 		x = self.positional(x)
+		y = self.encoder(x)
 
-		e = self.encoder(x, None, x_pad, False)
-		e_pad = x_pad
+		# z = self.embedding(z)
+		# z = self.positional(z)
+		#
+		# y = self.decoder(
+		# 	z, e,
+		# 	None, None,
+		# 	z_pad, z_pad,
+		# 	False, False,
+		# )
+		# y_pad = z_pad
 
-		z = self.embedding(z)
-		z = self.positional(z)
-
-		y = self.decoder(
-			z, e,
-			None, None,
-			z_pad, e_pad,
-			False, False,
-		)
-		y_pad = z_pad
-
-		return y, y_pad, ratios
+		return y, z_pad, ratios

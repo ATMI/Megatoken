@@ -5,7 +5,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 
-def log_load(path: str | Path):
+def log_load(path: str | Path, start: int = 0, end: int = -1):
 	if isinstance(path, str):
 		path = Path(path)
 
@@ -15,6 +15,10 @@ def log_load(path: str | Path):
 	for path in paths:
 		with path.open("r") as file:
 			for i, line in enumerate(file):
+				if i < start:
+					continue
+				if 0 < end <= i:
+					break
 				row = json.loads(line)
 				for k, v in row.items():
 					data[k].append(v)
@@ -23,16 +27,17 @@ def log_load(path: str | Path):
 
 
 def main():
-	# prop = "acc_"
+	start = 100
+	end = 2500
 	prop = "acc@100"
 	paths = [
-		("output/zeroBERT/log/train", "zero-BERT"),
-		("output/crossBERT/log/train", "cross-BERT"),
+		("output/log/zeroBERT0/train/0.json", "zero-BERT0"),
+		("output/log/zeroBERT/train/0.json", "zero-BERT"),
 	]
 
 	plt.figure()
 	for path, label in paths:
-		log = log_load(path)
+		log = log_load(path, start, end)
 
 		y = log[prop]
 		x = [i for i in range(len(y))]
