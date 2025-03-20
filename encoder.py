@@ -95,26 +95,16 @@ class Encoder(nn.Module):
 			model_dim=model_dim,
 			max_len=max_length,
 		)
-		# self.layers = nn.ModuleList(
-		# 	GatedEncoderLayer(
-		# 		model_dim=model_dim,
-		# 		head_num=head_num,
-		# 		fc_dim=fc_dim,
-		# 		activation=activation,
-		# 		bias=bias,
-		# 		temperature=temperature,
-		# 	)
-		# 	for _ in range(layer_num)
-		# )
-		self.encoder = nn.TransformerEncoder(
-			encoder_layer=nn.TransformerEncoderLayer(
-				d_model=model_dim,
-				nhead=head_num,
-				dim_feedforward=fc_dim,
+		self.layers = nn.ModuleList(
+			GatedEncoderLayer(
+				model_dim=model_dim,
+				head_num=head_num,
+				fc_dim=fc_dim,
 				activation=activation,
-				batch_first=True,
-			),
-			num_layers=layer_num,
+				bias=bias,
+				temperature=temperature,
+			)
+			for _ in range(layer_num)
 		)
 
 	def forward(
@@ -131,16 +121,15 @@ class Encoder(nn.Module):
 		inputs = self.embedding(tokens)
 		inputs = self.positional(inputs)
 
-		# pad_mask = torch.where(pad_mask, -torch.inf, 0)
-		# if attn_mask is None:
-		# 	attn_mask = torch.zeros((batch_size, input_length, input_length), device=device)
+		pad_mask = torch.where(pad_mask, -torch.inf, 0)
+		if attn_mask is None:
+			attn_mask = torch.zeros((batch_size, input_length, input_length), device=device)
 
 		outputs = inputs
 		pressure = torch.zeros((self.layer_num,), device=device)
-		outputs = self.encoder(outputs, None, pad_mask, False)
-		# for i, layer in enumerate(self.layers):
-		# 	outputs, attn_mask, valves = layer(outputs, pad_mask, attn_mask)
-		# 	pressure[i] = valves[input_mask].sum()
+		for i, layer in enumerate(self.layers):
+			outputs, attn_mask, valves = layer(outputs, pad_mask, attn_mask)
+			pressure[i] = valves[input_mask].sum()
 
 		return Encoder.Outputs(
 			embeds=outputs,

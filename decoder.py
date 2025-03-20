@@ -59,7 +59,7 @@ class Decoder(nn.Module):
 		sparse = self.positional(sparse)
 
 		head_num = self.head_num
-		# dense_attn_mask = dense_attn_mask.repeat_interleave(head_num, dim=0)
+		dense_attn_mask = dense_attn_mask.repeat_interleave(head_num, dim=0)
 
 		outputs = self.decoder(
 			sparse, dense,
