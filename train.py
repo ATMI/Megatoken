@@ -106,34 +106,39 @@ def main():
 
 	params = list(encoder.parameters()) + list(decoder.parameters())
 	optimizer = optim.Adam(params, Config.lr)
+	fractions = torch.tensor(Config.fractions, device=device)
 
 	step_num = len(train_loader)
 	bar = tqdm(total=step_num)
 
 	log_file = open("log.json", "w")
 	roll_acc = RollingMean(Config.rolling_n)
+	roll_cls = RollingMean(Config.rolling_n)
 	roll_loss = RollingMean(Config.rolling_n)
+	roll_valve = RollingMean(Config.rolling_n)
 
 	def finish():
 		log_file.close()
 		bar.close()
 		exit(0)
 
+	def checkpoint(path):
+		state = {
+			"encoder": encoder.state_dict(),
+			"decoder": decoder.state_dict(),
+			"optimizer": optimizer.state_dict(),
+		}
+		torch.save(state, path)
+
 	def interrupt(sig, frame):
 		if not prompt("Interrupt? "):
 			return
-
 		if prompt("Checkpoint? "):
-			checkpoint = {
-				"encoder": encoder.state_dict(),
-				"decoder": decoder.state_dict(),
-				"optimizer": optimizer.state_dict(),
-			}
-			torch.save(checkpoint, "checkpoint.pth")
+			checkpoint("checkpoint.pth")
 		finish()
 
 	signal.signal(signal.SIGINT, interrupt)
-	for batch in train_loader:
+	for step, batch in enumerate(train_loader):
 		optimizer.zero_grad()
 
 		batch = batch.to(device)
@@ -143,34 +148,43 @@ def main():
 			dense.embeds, dense.pad_mask, dense.attn_mask,
 		)
 
+		tokens_count = batch.pad_mask.numel() - batch.pad_mask.sum()
+		valve_loss = (dense.pressure - fractions * tokens_count).clamp(min=0).sum() / tokens_count
 		cls_loss = fn.cross_entropy(filled.flatten(0, 1), batch.labels.flatten())
-		loss = cls_loss
+		loss = cls_loss + valve_loss
 
 		loss.backward()
-		for param in params:
-			if param.isnan().any():
-				raise RuntimeError()
 		optimizer.step()
 		torch.cuda.empty_cache()
 
 		acc = accuracy(filled, batch.labels) * 100
+		valve_loss = valve_loss.item()
+		cls_loss = cls_loss.item()
 		loss = loss.item()
 
 		mean_acc = roll_acc(acc)
 		mean_loss = roll_loss(loss)
+		mean_valve = roll_valve(valve_loss)
+		mean_cls = roll_cls(cls_loss)
 
 		log = {
 			"acc": f"{acc:.2f}",
 			"acc~": f"{mean_acc:.2f}",
-			"loss": f"{loss:.4f}",
-			"loss~": f"{mean_loss:.4f}",
+			"loss": f"{loss:.3f}",
+			"loss~": f"{mean_loss:.3f}",
+			"valve": f"{valve_loss:.3f}",
+			"valve~": f"{mean_valve:.3f}",
+			"cls": f"{cls_loss:.3f}",
+			"cls~": f"{mean_cls:.3f}",
 		}
 		log_file.write(json.dumps(log) + "\n")
 		log_file.flush()
 
 		postfix = {
 			"acc": f"{mean_acc:.2f}",
-			"loss": f"{mean_loss:.4f}",
+			"loss": f"{mean_loss:.3f}",
+			"valve": f"{mean_valve:.3f}",
+			"cls": f"{mean_cls:.3f}",
 		}
 		bar.set_postfix(**postfix)
 		bar.update(1)

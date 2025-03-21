@@ -43,12 +43,11 @@ class GatedEncoderLayer(nn.Module):
 
 		valves = (inputs[:, :, 0] + self.bias) / self.temperature
 		valves = valves.sigmoid()
+		valves = valves.clamp(min=1e-8, max=1 - 1e-8)
 
-		mask_vals = valves.log()  # batch, input_length
-		mask_vals = mask_vals.unsqueeze(1)  # batch, 1, input_length
-
-		mask = torch.zeros((batch_size, input_length, input_length), device=device)
-		mask[:] = mask_vals[:]
+		mask = valves.log()  # batch, input_length
+		mask = mask.unsqueeze(1)
+		mask = mask.repeat(1, input_length, 1)  # batch, 1, input_length
 
 		indices = torch.arange(input_length, device=device)
 		mask[:, indices, indices] = 0
