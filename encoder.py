@@ -38,7 +38,6 @@ class GatedEncoderLayer(nn.Module):
 		attn_mask: Tensor,
 	) -> Tuple[Tensor, Tensor, Tensor]:
 		device = inputs.device
-		batch_size = inputs.size(0)
 		input_length = inputs.size(1)
 
 		valves = (inputs[:, :, 0] + self.bias) / self.temperature

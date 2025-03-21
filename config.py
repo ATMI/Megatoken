@@ -19,7 +19,6 @@ class Config:
 	activation = "gelu"
 
 	encoder_layers = 6
-	fractions = [0.7, 0.8, 0.9, 0.9, 0.8, 0.7]
 	temperature = 0.1
 	bias = 5
 

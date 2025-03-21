@@ -101,12 +101,19 @@ def main():
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	train_loader, test_loader = prepare.dataloaders(collate_batch)
 
-	encoder = prepare.encoder().to(device)
-	decoder = prepare.decoder().to(device)
+	encoder = prepare.encoder()
+	decoder = prepare.decoder()
+
+	state = torch.load("checkpoint.pth")
+	encoder.load_state_dict(state["encoder"])
+	decoder.load_state_dict(state["decoder"])
+
+	encoder = encoder.to(device)
+	decoder = decoder.to(device)
 
 	params = list(encoder.parameters()) + list(decoder.parameters())
 	optimizer = optim.Adam(params, Config.lr)
-	fractions = torch.tensor(Config.fractions, device=device)
+	optimizer.load_state_dict(state["optimizer"])
 
 	step_num = len(train_loader)
 	bar = tqdm(total=step_num)
@@ -149,7 +156,8 @@ def main():
 		)
 
 		tokens_count = batch.pad_mask.numel() - batch.pad_mask.sum()
-		valve_loss = (dense.pressure - fractions * tokens_count).clamp(min=0).sum() / tokens_count
+		# valve_loss = (dense.pressure - fractions * tokens_count).clamp(min=0).sum() / tokens_count
+		valve_loss = dense.pressure.mean() / tokens_count
 		cls_loss = fn.cross_entropy(filled.flatten(0, 1), batch.labels.flatten())
 		loss = cls_loss + valve_loss
 
