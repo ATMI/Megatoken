@@ -1,5 +1,5 @@
+from operator import sub, add
 from typing import Tuple
-
 from torch import Tensor
 
 from config import Config
@@ -17,12 +17,11 @@ class RollingMean:
 		if self.sums is None:
 			self.sums = values
 		else:
-			self.sums = map(sum, zip(self.sums, values))
-			self.sums = tuple(self.sums)
+			self.sums = tuple(map(add, self.sums, values))
 
 		if len(self.values) > self.n:
 			values = self.values.pop(0)
-			self.sums -= values
+			self.sums = tuple(map(sub, self.sums, values))
 
 		n = len(self.values)
 		mean = tuple(s / n for s in self.sums)
