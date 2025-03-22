@@ -96,7 +96,7 @@ def main():
 		bar.set_postfix(**postfix)
 		bar.update(1)
 
-		if step % (step_num // 5) == 0 or (step + 1) == step_num:
+		if (step + 1) % (step_num // 5) == 0 or (step + 1) == step_num:
 			checkpoint(f"{step}.pth")
 	finish()
 
