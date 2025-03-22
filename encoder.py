@@ -5,8 +5,6 @@ import torch
 from torch import Tensor
 from torch import nn
 
-from positional import PositionalEncoding
-
 
 class GatedEncoderLayer(nn.Module):
 	def __init__(
@@ -69,10 +67,6 @@ class Encoder(nn.Module):
 
 	def __init__(
 		self,
-		vocab_size: int,
-		pad_token: int,
-		max_length: int,
-
 		model_dim: int,
 		head_num: int,
 		fc_dim: int,
@@ -84,15 +78,6 @@ class Encoder(nn.Module):
 	):
 		super(Encoder, self).__init__()
 		self.layer_num = layer_num
-		self.embedding = nn.Embedding(
-			num_embeddings=vocab_size,
-			embedding_dim=model_dim,
-			padding_idx=pad_token,
-		)
-		self.positional = PositionalEncoding(
-			model_dim=model_dim,
-			max_len=max_length,
-		)
 		self.layers = nn.ModuleList(
 			GatedEncoderLayer(
 				model_dim=model_dim,
@@ -107,17 +92,15 @@ class Encoder(nn.Module):
 
 	def forward(
 		self,
-		tokens: Tensor,
+		inputs: Tensor,
 		pad_mask: Tensor,
 		attn_mask: Optional[Tensor],
 	) -> Outputs:
-		device = tokens.device
-		batch_size = tokens.size(0)
+		device = inputs.device
+		batch_size = inputs.size(0)
 
 		input_mask = ~pad_mask
-		input_length = tokens.size(1)
-		inputs = self.embedding(tokens)
-		inputs = self.positional(inputs)
+		input_length = inputs.size(1)
 
 		pad_mask = torch.where(pad_mask, -torch.inf, 0)
 		if attn_mask is None:

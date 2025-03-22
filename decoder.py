@@ -3,15 +3,11 @@ from typing import Callable, Union
 from torch import Tensor
 from torch import nn
 
-from positional import PositionalEncoding
-
 
 class Decoder(nn.Module):
 	def __init__(
 		self,
 		vocab_size: int,
-		padding_idx: int,
-		max_len: int,
 
 		model_dim: int,
 		head_num: int,
@@ -22,15 +18,6 @@ class Decoder(nn.Module):
 	):
 		super(Decoder, self).__init__()
 		self.head_num = head_num
-		self.embedding = nn.Embedding(
-			num_embeddings=vocab_size,
-			embedding_dim=model_dim,
-			padding_idx=padding_idx,
-		)
-		self.positional = PositionalEncoding(
-			model_dim=model_dim,
-			max_len=max_len,
-		)
 		self.decoder = nn.TransformerDecoder(
 			decoder_layer=nn.TransformerDecoderLayer(
 				d_model=model_dim,
@@ -48,16 +35,13 @@ class Decoder(nn.Module):
 
 	def forward(
 		self,
-		sparse_tokens: Tensor,
+		sparse: Tensor,
 		sparse_pad_mask: Tensor,
 
 		dense: Tensor,
 		dense_pad_mask: Tensor,
 		dense_attn_mask: Tensor,
 	) -> Tensor:
-		sparse = self.embedding(sparse_tokens)
-		sparse = self.positional(sparse)
-
 		head_num = self.head_num
 		dense_attn_mask = dense_attn_mask.repeat_interleave(head_num, dim=0)
 

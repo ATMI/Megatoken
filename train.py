@@ -3,7 +3,7 @@ import signal
 from dataclasses import dataclass
 
 import torch
-from torch import optim, Tensor
+from torch import optim, Tensor, nn
 from torch.nn import functional as fn
 from torch.nn.utils import rnn
 from tqdm import tqdm
@@ -95,25 +95,42 @@ def prompt(text: str) -> bool:
 			print("Please answer with 'yes' or 'no'.")
 
 
+class Model(nn.Module):
+	def __init__(self):
+		super().__init__()
+		self.embedding = prepare.embedding()
+		self.encoder = prepare.encoder()
+		self.decoder = prepare.decoder()
+
+	def forward(
+		self,
+		dense_tokens: Tensor,
+		dense_tokens_pad: Tensor,
+
+		sparse_tokens: Tensor,
+		sparse_tokens_pad: Tensor,
+	):
+		dense_embeds = self.embedding(dense_tokens)
+		dense = self.encoder(dense_embeds, dense_tokens_pad, None)
+
+		sparse_embeds = self.embedding(sparse_tokens)
+		filled = self.decoder(
+			sparse_embeds, sparse_tokens_pad,
+			dense.embeds, dense.pad_mask, dense.attn_mask,
+		)
+
+		return dense, filled
+
+
 def main():
 	torch.manual_seed(Config.seed)
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	train_loader, test_loader = prepare.dataloaders(collate_batch)
 
-	encoder = prepare.encoder()
-	decoder = prepare.decoder()
-
-	state = torch.load("checkpoint.pth")
-	encoder.load_state_dict(state["encoder"])
-	decoder.load_state_dict(state["decoder"])
-
-	encoder = encoder.to(device)
-	decoder = decoder.to(device)
-
-	params = list(encoder.parameters()) + list(decoder.parameters())
-	optimizer = optim.Adam(params, Config.lr)
-	optimizer.load_state_dict(state["optimizer"])
+	model = Model()
+	model = model.to(device)
+	optimizer = optim.Adam(model.parameters(), Config.lr)
 
 	step_num = len(train_loader)
 	bar = tqdm(total=step_num)
@@ -131,8 +148,7 @@ def main():
 
 	def checkpoint(path):
 		state = {
-			"encoder": encoder.state_dict(),
-			"decoder": decoder.state_dict(),
+			"model": model.state_dict(),
 			"optimizer": optimizer.state_dict(),
 		}
 		torch.save(state, path)
@@ -149,14 +165,12 @@ def main():
 		optimizer.zero_grad()
 
 		batch = batch.to(device)
-		dense = encoder(batch.tokens, batch.pad_mask, None)
-		filled = decoder(
+		dense, filled = model.forward(
+			batch.tokens, batch.pad_mask,
 			batch.sparse, batch.pad_mask,
-			dense.embeds, dense.pad_mask, dense.attn_mask,
 		)
 
 		tokens_count = batch.pad_mask.numel() - batch.pad_mask.sum()
-		# valve_loss = (dense.pressure - fractions * tokens_count).clamp(min=0).sum() / tokens_count
 		valve_loss = dense.pressure.mean() / tokens_count
 		cls_loss = fn.cross_entropy(filled.flatten(0, 1), batch.labels.flatten())
 		loss = cls_loss + valve_loss
@@ -196,6 +210,9 @@ def main():
 		}
 		bar.set_postfix(**postfix)
 		bar.update(1)
+
+		if step % (step_num // 5) == 0 or (step + 1) == step_num:
+			checkpoint(f"{step}.pth")
 	finish()
 
 

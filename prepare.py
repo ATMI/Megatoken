@@ -1,10 +1,12 @@
 from pathlib import Path
 
 import datasets
+from torch import nn
 from torch.utils import data
 from transformers import AutoTokenizer
 
 from config import Config
+from embedding import Embedding
 from encoder import Encoder
 from decoder import Decoder
 
@@ -52,12 +54,17 @@ def dataloaders(collate_batch):
 	return train_loader, test_loader
 
 
-def encoder():
-	return Encoder(
+def embedding():
+	return Embedding(
+		model_dim=Config.model_dim,
 		vocab_size=Config.vocab_size,
 		pad_token=Config.pad_token,
-		max_length=Config.max_length,
+		max_len=Config.max_length,
+	)
 
+
+def encoder():
+	return Encoder(
 		model_dim=Config.model_dim,
 		head_num=Config.head_num,
 		fc_dim=Config.fc_dim,
@@ -72,9 +79,6 @@ def encoder():
 def decoder():
 	return Decoder(
 		vocab_size=Config.vocab_size,
-		padding_idx=Config.pad_token,
-		max_len=Config.max_length,
-
 		model_dim=Config.model_dim,
 		head_num=Config.head_num,
 		fc_dim=Config.fc_dim,
