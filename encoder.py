@@ -40,7 +40,9 @@ class GatedEncoderLayer(nn.Module):
 
 		valves = (inputs[:, :, 0] + self.bias) / self.temperature
 		valves = valves.sigmoid()
-		valves = valves.clamp(min=1e-8, max=1 - 1e-8)
+		valves = valves.clamp(min=1e-10, max=1)
+
+		inputs = inputs * valves.unsqueeze(2)
 
 		mask = valves.log()  # batch, input_length
 		mask = mask.unsqueeze(1)
