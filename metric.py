@@ -29,9 +29,9 @@ class RollingMean:
 		return mean
 
 
-def accuracy(filled: Tensor, target: Tensor) -> float:
+def accuracy(logits: Tensor, target: Tensor) -> float:
 	mask = target.ne(Config.ignore_token)
-	pred = filled[mask].argmax(dim=1)
+	pred = logits[mask].argmax(dim=1)
 	true = target[mask]
 
 	corr = pred.eq(true)

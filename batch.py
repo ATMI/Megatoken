@@ -9,14 +9,12 @@ from config import Config
 
 @dataclass
 class Batch:
-	tokens: Tensor
 	sparse: Tensor
 	labels: Tensor
 	pad_mask: Tensor
 
 	def to(self, device) -> "Batch":
 		return Batch(
-			self.tokens.to(device),
 			self.sparse.to(device),
 			self.labels.to(device),
 			self.pad_mask.to(device),
@@ -43,4 +41,4 @@ class Batch:
 			sparse[i, indices] = Config.mask_token
 			labels[i, indices] = tokens[i, indices]
 
-		return Batch(tokens, sparse, labels, pad_mask)
+		return Batch(sparse, labels, pad_mask)

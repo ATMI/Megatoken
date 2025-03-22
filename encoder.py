@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Tuple, Callable, Optional
+from typing import Tuple, Callable
 
 import torch
 from torch import Tensor
@@ -35,27 +35,26 @@ class GatedEncoderLayer(nn.Module):
 		pad_mask: Tensor,
 		attn_mask: Tensor,
 	) -> Tuple[Tensor, Tensor, Tensor]:
-		device = inputs.device
-		input_length = inputs.size(1)
+		head_mask = attn_mask.repeat_interleave(self.head_num, dim=0)
+		outputs = self.encoder(inputs, head_mask, pad_mask, False)
+		del head_mask
 
-		valves = (inputs[:, :, 0] + self.bias) / self.temperature
+		valves = (outputs[:, :, 0] + self.bias) / self.temperature
 		valves = valves.sigmoid()
 		valves = valves.clamp(min=1e-10, max=1)
 
-		inputs = inputs * valves.unsqueeze(2)
+		outputs = outputs * valves.unsqueeze(2)
 
-		mask = valves.log()  # batch, input_length
-		mask = mask.unsqueeze(1)
-		mask = mask.repeat(1, input_length, 1)  # batch, 1, input_length
-
+		device = inputs.device
+		input_length = inputs.size(1)
 		indices = torch.arange(input_length, device=device)
+
+		mask = valves.log()
+		mask = mask.unsqueeze(2)
+		mask = mask.repeat(1, 1, input_length)
 		mask[:, indices, indices] = 0
 
-		# repeating mask for each head
 		attn_mask = attn_mask + mask
-		head_mask = attn_mask.repeat_interleave(self.head_num, dim=0)
-		outputs = self.encoder(inputs, head_mask, pad_mask, False)
-
 		return outputs, attn_mask, valves
 
 
@@ -63,9 +62,9 @@ class Encoder(nn.Module):
 	@dataclass
 	class Outputs:
 		embeds: Tensor
+		lengths: Tensor
 		pad_mask: Tensor
 		attn_mask: Tensor
-		pressure: Tensor
 
 	def __init__(
 		self,
@@ -96,27 +95,23 @@ class Encoder(nn.Module):
 		self,
 		inputs: Tensor,
 		pad_mask: Tensor,
-		attn_mask: Optional[Tensor],
+		attn_mask: Tensor,
 	) -> Outputs:
 		device = inputs.device
 		batch_size = inputs.size(0)
 
-		input_mask = ~pad_mask
-		input_length = inputs.size(1)
-
+		input_mask = torch.where(pad_mask, 0, 1)
 		pad_mask = torch.where(pad_mask, -torch.inf, 0)
-		if attn_mask is None:
-			attn_mask = torch.zeros((batch_size, input_length, input_length), device=device)
 
 		outputs = inputs
-		pressure = torch.zeros((self.layer_num,), device=device)
+		output_lengths = torch.zeros((self.layer_num, batch_size), device=device)
 		for i, layer in enumerate(self.layers):
 			outputs, attn_mask, valves = layer(outputs, pad_mask, attn_mask)
-			pressure[i] = valves[input_mask].sum()
+			output_lengths[i] = (valves * input_mask).sum(dim=1)
 
 		return Encoder.Outputs(
 			embeds=outputs,
+			lengths=output_lengths,
 			pad_mask=pad_mask,
 			attn_mask=attn_mask,
-			pressure=pressure,
 		)

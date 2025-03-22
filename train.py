@@ -53,26 +53,25 @@ def main():
 		optimizer.zero_grad()
 
 		batch = batch.to(device)
-		dense, filled = model.forward(
-			batch.tokens, batch.pad_mask,
-			batch.sparse, batch.pad_mask,
-		)
+		result = model(batch.sparse, batch.pad_mask)
 
-		tokens_count = batch.pad_mask.numel() - batch.pad_mask.sum()
-		valve_loss = dense.pressure.mean() / tokens_count
-		cls_loss = fn.cross_entropy(filled.flatten(0, 1), batch.labels.flatten())
-		loss = cls_loss + valve_loss
+		input_lengths = batch.pad_mask.size(1) - batch.pad_mask.sum(dim=1)
+		input_lengths = input_lengths.unsqueeze(0)
+
+		valve_loss = (result.lengths / input_lengths).mean()
+		class_loss = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
+		loss = class_loss + valve_loss
 
 		loss.backward()
 		optimizer.step()
 		torch.cuda.empty_cache()
 
-		acc = accuracy(filled, batch.labels) * 100
+		acc = accuracy(result.logits, batch.labels) * 100
 		valve_loss = valve_loss.item()
-		cls_loss = cls_loss.item()
+		class_loss = class_loss.item()
 		loss = loss.item()
 
-		acc_, loss_, valve_, cls_ = rolling(acc, loss, valve_loss, cls_loss)
+		acc_, loss_, valve_, cls_ = rolling(acc, loss, valve_loss, class_loss)
 
 		log = {
 			"acc": f"{acc:.2f}",
@@ -81,7 +80,7 @@ def main():
 			"loss~": f"{loss_:.3f}",
 			"valve": f"{valve_loss:.3f}",
 			"valve~": f"{valve_:.3f}",
-			"cls": f"{cls_loss:.3f}",
+			"cls": f"{class_loss:.3f}",
 			"cls~": f"{cls_:.3f}",
 		}
 		log_file.write(json.dumps(log) + "\n")

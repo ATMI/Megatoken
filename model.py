@@ -1,30 +1,42 @@
+from dataclasses import dataclass
+
+import torch
 from torch import nn, Tensor
 
 import prepare
+from config import Config
 
 
 class Model(nn.Module):
+	@dataclass
+	class Outputs:
+		logits: Tensor
+		lengths: Tensor
+
 	def __init__(self):
 		super().__init__()
 		self.embedding = prepare.embedding()
 		self.encoder = prepare.encoder()
-		self.decoder = prepare.decoder()
+		self.classifier = nn.Sequential(
+			nn.Dropout(),
+			nn.Linear(Config.model_dim, Config.vocab_size)
+		)
 
 	def forward(
 		self,
-		dense_tokens: Tensor,
-		dense_tokens_pad: Tensor,
+		tokens: Tensor,
+		pad_mask: Tensor,
+	) -> Outputs:
+		batch = tokens.size(0)
+		length = tokens.size(1)
+		device = tokens.device
+		attn_mask = torch.zeros((batch, length, length), device=device)
 
-		sparse_tokens: Tensor,
-		sparse_tokens_pad: Tensor,
-	):
-		dense_embeds = self.embedding(dense_tokens)
-		dense = self.encoder(dense_embeds, dense_tokens_pad, None)
+		embeds = self.embedding(tokens)
+		result = self.encoder(embeds, pad_mask, attn_mask)
+		logits = self.classifier(result.embeds)
 
-		sparse_embeds = self.embedding(sparse_tokens)
-		filled = self.decoder(
-			sparse_embeds, sparse_tokens_pad,
-			dense.embeds, dense.pad_mask, dense.attn_mask,
+		return Model.Outputs(
+			logits=logits,
+			lengths=result.lengths,
 		)
-
-		return dense, filled
