@@ -23,4 +23,4 @@ class Config:
 	bias = 5
 
 	decoder_layers = 2
-	sparsity = 0.15
+	sparsity = 0.5

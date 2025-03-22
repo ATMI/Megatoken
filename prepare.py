@@ -1,14 +1,14 @@
 from pathlib import Path
 
 import datasets
-from torch import nn
 from torch.utils import data
 from transformers import AutoTokenizer
 
+from batch import Batch
 from config import Config
+from decoder import Decoder
 from embedding import Embedding
 from encoder import Encoder
-from decoder import Decoder
 
 
 def dataset():
@@ -36,19 +36,19 @@ def dataset():
 	return ds
 
 
-def dataloaders(collate_batch):
+def dataloaders():
 	ds = dataset()
 	train_loader = data.DataLoader(
 		dataset=ds["train"],
 		batch_size=Config.batch_size,
 		shuffle=True,
-		collate_fn=collate_batch,
+		collate_fn=Batch.collate,
 	)
 	test_loader = data.DataLoader(
 		dataset=ds["test"],
 		batch_size=Config.batch_size,
 		shuffle=False,
-		collate_fn=collate_batch,
+		collate_fn=Batch.collate,
 	)
 
 	return train_loader, test_loader
