@@ -75,17 +75,13 @@ def main():
 		class_loss = class_loss.item()
 		loss = loss.item()
 
-		acc_, loss_, valve_, cls_ = rolling(acc, loss, valve_loss, class_loss)
+		acc_, loss_, valve_, class_ = rolling(acc, loss, valve_loss, class_loss)
 
 		log = {
-			"acc": f"{acc:.2f}",
-			"acc~": f"{acc_:.2f}",
-			"loss": f"{loss:.3f}",
-			"loss~": f"{loss_:.3f}",
-			"valve": f"{valve_loss:.3f}",
-			"valve~": f"{valve_:.3f}",
-			"cls": f"{class_loss:.3f}",
-			"cls~": f"{cls_:.3f}",
+			"acc": acc, "acc~": acc_,
+			"loss": loss, "loss~": loss_,
+			"valve": valve_loss, "valve~": valve_,
+			"class": class_loss, "class~": class_,
 		}
 		log_file.write(json.dumps(log) + "\n")
 		log_file.flush()
@@ -94,7 +90,7 @@ def main():
 			"acc": f"{acc_:.2f}",
 			"loss": f"{loss_:.3f}",
 			"valve": f"{valve_:.3f}",
-			"cls": f"{cls_:.3f}",
+			"class": f"{class_:.3f}",
 		}
 		bar.set_postfix(**postfix)
 		bar.update(1)
