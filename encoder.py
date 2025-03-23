@@ -104,10 +104,11 @@ class Encoder(nn.Module):
 		pad_mask = torch.where(pad_mask, -torch.inf, 0)
 
 		outputs = inputs
-		output_lengths = torch.zeros((self.layer_num, batch_size), device=device)
+		output_lengths = torch.zeros((batch_size, self.layer_num), device=device)
 		for i, layer in enumerate(self.layers):
 			outputs, attn_mask, valves = layer(outputs, pad_mask, attn_mask)
-			output_lengths[i] = (valves * input_mask).sum(dim=1)
+			lengths = (valves * input_mask).sum(dim=1)
+			output_lengths[:, i] = lengths
 
 		return Encoder.Outputs(
 			embeds=outputs,

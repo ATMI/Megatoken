@@ -20,7 +20,7 @@ class Config:
 
 	encoder_layers = 6
 	temperature = 0.1
-	bias = 5
+	bias = 0
 
 	decoder_layers = 2
 	sparsity = 0.15

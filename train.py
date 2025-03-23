@@ -23,6 +23,10 @@ def main():
 	model = model.to(device)
 	optimizer = optim.Adam(model.parameters(), Config.lr)
 
+	init = torch.load("checkpoint/1/20312.pth", map_location=device, weights_only=True)
+	model.load_state_dict(init["model"])
+	optimizer.load_state_dict(init["optimizer"])
+
 	step_num = len(train_loader)
 	bar = tqdm(total=step_num)
 
@@ -56,9 +60,9 @@ def main():
 		result = model(batch.sparse, batch.pad_mask)
 
 		input_lengths = batch.pad_mask.size(1) - batch.pad_mask.sum(dim=1)
-		input_lengths = input_lengths.unsqueeze(0)
+		input_lengths = input_lengths.unsqueeze(1)
 
-		valve_loss = (result.lengths / input_lengths).mean()
+		valve_loss = ((result.lengths / input_lengths) ** 2).mean()
 		class_loss = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
 		loss = class_loss + valve_loss
 
