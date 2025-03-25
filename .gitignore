@@ -1,4 +1,7 @@
-!.gitignore
 .*
 
-output/checkpoint/*
+checkpoint/*
+dataset/*
+
+!.gitignore
+!.gitkeep

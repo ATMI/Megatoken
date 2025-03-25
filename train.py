@@ -15,6 +15,9 @@ from prompt import prompt
 
 def main():
 	torch.manual_seed(Config.seed)
+	torch.cuda.manual_seed(Config.seed)
+	# torch.backends.cudnn.deterministic = True
+	# torch.backends.cudnn.benchmark = False
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	train_loader, test_loader = prepare.dataloaders()
