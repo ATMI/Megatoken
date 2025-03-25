@@ -9,36 +9,32 @@ from config import Config
 
 @dataclass
 class Batch:
-	sparse: Tensor
+	inputs: Tensor
 	labels: Tensor
 	pad_mask: Tensor
 
 	def to(self, device) -> "Batch":
 		return Batch(
-			self.sparse.to(device),
+			self.inputs.to(device),
 			self.labels.to(device),
 			self.pad_mask.to(device),
 		)
 
 	@staticmethod
 	def collate(batch) -> "Batch":
-		batch = [row["tokens"] for row in batch]
-		tokens = [torch.tensor(row) for row in batch]
-		tokens = rnn.pad_sequence(tokens, batch_first=True, padding_value=Config.pad_token)
+		tokens = [row["tokens"] for row in batch]
+		inputs = [torch.tensor(row) for row in tokens]
+		inputs = rnn.pad_sequence(inputs, batch_first=True, padding_value=Config.pad_token)
 
-		sparse = tokens.clone()
-		labels = torch.full_like(tokens, Config.ignore_token)
-		pad_mask = torch.ones_like(tokens, dtype=torch.bool)
+		batch_size = inputs.size(0)
+		seq_length = inputs.size(1)
 
-		for i, row in enumerate(batch):
+		pad_mask = torch.ones((batch_size, seq_length), dtype=torch.bool)
+		for i, row in enumerate(tokens):
 			length = len(row)
-			pad_mask[i, :length] = False
+			pad_mask[i, length:] = 0
 
-			sparsity = max(1, int(length * Config.sparsity))
-			indices = torch.randperm(length)
-			indices = indices[:sparsity]
+		labels = torch.full((batch_size, 1), Config.ignore_token)
+		labels = torch.cat((inputs[:, 1:], labels), dim=1)
 
-			sparse[i, indices] = Config.mask_token
-			labels[i, indices] = tokens[i, indices]
-
-		return Batch(sparse, labels, pad_mask)
+		return Batch(inputs, labels, pad_mask)

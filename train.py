@@ -9,7 +9,6 @@ from tqdm import tqdm
 import prepare
 from config import Config
 from metric import RollingMean, accuracy
-from model import Model
 from prompt import prompt
 
 
@@ -22,13 +21,9 @@ def main():
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	train_loader, test_loader = prepare.dataloaders()
 
-	model = Model()
+	model = prepare.model()
 	model = model.to(device)
 	optimizer = optim.Adam(model.parameters(), Config.lr)
-
-	init = torch.load("checkpoint/1/20312.pth", map_location=device, weights_only=True)
-	model.load_state_dict(init["model"])
-	optimizer.load_state_dict(init["optimizer"])
 
 	step_num = len(train_loader)
 	bar = tqdm(total=step_num)
@@ -48,7 +43,7 @@ def main():
 		}
 		torch.save(state, path)
 
-	def interrupt(sig, frame):
+	def interrupt(_, __):
 		if not prompt("Interrupt? "):
 			return
 		if prompt("Checkpoint? "):
@@ -60,31 +55,39 @@ def main():
 		optimizer.zero_grad()
 
 		batch = batch.to(device)
-		result = model(batch.sparse, batch.pad_mask)
+		result = model.forward(
+			memory_tokens=batch.inputs,
+			memory_pad_mask=batch.pad_mask,
+			memory_attn_mask=None,
 
-		input_lengths = batch.pad_mask.size(1) - batch.pad_mask.sum(dim=1)
-		input_lengths = input_lengths.unsqueeze(1)
+			input_tokens=batch.inputs,
+			input_pad_mask=batch.pad_mask,
+			input_attn_mask=None,
+		)
 
-		valve_loss = ((result.lengths / input_lengths) ** 2).mean()
-		class_loss = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
-		loss = class_loss + valve_loss
+		input_length = batch.pad_mask.sum(dim=1)
+		input_length = input_length.unsqueeze(1)
+
+		loss_volume = ((result.volume / input_length) ** 2).mean()
+		loss_class = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
+		loss = loss_class + loss_volume
 
 		loss.backward()
 		optimizer.step()
 		torch.cuda.empty_cache()
 
 		acc = accuracy(result.logits, batch.labels) * 100
-		valve_loss = valve_loss.item()
-		class_loss = class_loss.item()
+		loss_volume = loss_volume.item()
+		loss_class = loss_class.item()
 		loss = loss.item()
 
-		acc_, loss_, valve_, class_ = rolling(acc, loss, valve_loss, class_loss)
+		acc_, loss_, loss_volume_, loss_class_ = rolling(acc, loss, loss_volume, loss_class)
 
 		log = {
 			"acc": acc, "acc~": acc_,
 			"loss": loss, "loss~": loss_,
-			"valve": valve_loss, "valve~": valve_,
-			"class": class_loss, "class~": class_,
+			"class": loss_class, "class~": loss_class_,
+			"volume": loss_volume, "valve~": loss_volume_,
 		}
 		log_file.write(json.dumps(log) + "\n")
 		log_file.flush()
@@ -92,13 +95,13 @@ def main():
 		postfix = {
 			"acc": f"{acc_:.2f}",
 			"loss": f"{loss_:.3f}",
-			"valve": f"{valve_:.3f}",
-			"class": f"{class_:.3f}",
+			"class": f"{loss_class_:.3f}",
+			"volume": f"{loss_volume_:.3f}",
 		}
 		bar.set_postfix(**postfix)
 		bar.update(1)
 
-		if (step + 1) % (step_num // 5) == 0 or (step + 1) == step_num:
+		if (step + 1) % (step_num // 10) == 0 or (step + 1) == step_num:
 			checkpoint(f"{step}.pth")
 	finish()
 

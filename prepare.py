@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Tuple
 
 import datasets
 from torch.utils import data
@@ -6,9 +7,7 @@ from transformers import AutoTokenizer
 
 from batch import Batch
 from config import Config
-from decoder import Decoder
-from embedding import Embedding
-from encoder import Encoder
+from model import Model
 
 
 def dataset():
@@ -36,7 +35,10 @@ def dataset():
 	return ds
 
 
-def dataloaders():
+def dataloaders() -> Tuple[
+	data.DataLoader[Batch],
+	data.DataLoader[Batch]
+]:
 	ds = dataset()
 	train_loader = data.DataLoader(
 		dataset=ds["train"],
@@ -54,34 +56,5 @@ def dataloaders():
 	return train_loader, test_loader
 
 
-def embedding():
-	return Embedding(
-		model_dim=Config.model_dim,
-		vocab_size=Config.vocab_size,
-		pad_token=Config.pad_token,
-		max_len=Config.max_length,
-	)
-
-
-def encoder():
-	return Encoder(
-		model_dim=Config.model_dim,
-		head_num=Config.head_num,
-		fc_dim=Config.fc_dim,
-		activation=Config.activation,
-		layer_num=Config.encoder_layers,
-
-		bias=Config.bias,
-		temperature=Config.temperature,
-	)
-
-
-def decoder():
-	return Decoder(
-		vocab_size=Config.vocab_size,
-		model_dim=Config.model_dim,
-		head_num=Config.head_num,
-		fc_dim=Config.fc_dim,
-		activation=Config.activation,
-		layer_num=Config.decoder_layers,
-	)
+def model() -> Model:
+	return Model(Config.t5, Config.bias, Config.temperature)

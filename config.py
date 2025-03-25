@@ -10,9 +10,10 @@ class Config:
 
 	seed = 42
 	lr = 0.0001
-	batch_size = 32
+	batch_size = 16
 	rolling_n = 100
 
+	t5 = "google/flan-t5-small"
 	model_dim = 512
 	head_num = 8
 	fc_dim = 2048
@@ -20,7 +21,7 @@ class Config:
 
 	encoder_layers = 6
 	temperature = 0.1
-	bias = 0
+	bias = 2
 
 	decoder_layers = 2
 	sparsity = 0.15
