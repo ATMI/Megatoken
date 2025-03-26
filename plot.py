@@ -15,7 +15,7 @@ def load(path: str):
 	return result
 
 
-def plot_losses(step, class_loss, valve_loss):
+def plot_losses(step, class_loss, volume_loss):
 	fig, ax1 = plt.subplots()
 	ax1.plot(
 		step, class_loss,
@@ -25,8 +25,8 @@ def plot_losses(step, class_loss, valve_loss):
 
 	ax2 = ax1.twinx()
 	ax2.plot(
-		step, valve_loss,
-		label="valve",
+		step, volume_loss,
+		label="volume",
 		color="red",
 	)
 
@@ -58,7 +58,7 @@ def plot_accuracy(step, loss, accuracy):
 
 
 def main():
-	data = load("log/1.json")
+	data = load("log.json")
 
 	plot_accuracy(
 		step=data["step"],
@@ -68,8 +68,8 @@ def main():
 
 	plot_losses(
 		step=data["step"],
-		class_loss=data["cls~"],
-		valve_loss=data["valve~"],
+		class_loss=data["class~"],
+		volume_loss=data["volume~"],
 	)
 
 

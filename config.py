@@ -14,7 +14,6 @@ class Config:
 	rolling_n = 100
 
 	t5 = "google/flan-t5-small"
-	volume_threshold = 0.1
 	decoder_visibility = 3
 	temperature = 0.1
-	bias = 5
+	bias = 3

@@ -70,9 +70,10 @@ def main():
 		)
 
 		input_length = batch.pad_mask.sum(dim=1)
-		loss_volume = (result.volume[:, -1] / input_length - Config.volume_threshold).clamp(min=0).mean()
+		loss_volume = (result.volume[:, -1] - 1) / input_length
+		loss_volume = (loss_volume ** 2).mean()
 		loss_class = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
-		loss = loss_class + loss_volume
+		loss = loss_class + 5 * loss_volume
 
 		loss.backward()
 		optimizer.step()
@@ -89,7 +90,7 @@ def main():
 			"acc": acc, "acc~": acc_,
 			"loss": loss, "loss~": loss_,
 			"class": loss_class, "class~": loss_class_,
-			"volume": loss_volume, "valve~": loss_volume_,
+			"volume": loss_volume, "volume~": loss_volume_,
 		}
 		log_file.write(json.dumps(log) + "\n")
 		log_file.flush()
