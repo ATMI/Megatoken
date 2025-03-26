@@ -16,7 +16,7 @@ def dataset():
 		return datasets.load_from_disk(path)
 
 	def tokenize(batch):
-		tokenizer = AutoTokenizer.from_pretrained(Config.tokenizer)
+		tokenizer = AutoTokenizer.from_pretrained(Config.model)
 		tokens = tokenizer(
 			batch["text"],
 			padding=False,
@@ -57,4 +57,4 @@ def dataloaders() -> Tuple[
 
 
 def model() -> Model:
-	return Model(Config.t5, Config.bias, Config.temperature)
+	return Model(Config.model, Config.bias, Config.temperature)
