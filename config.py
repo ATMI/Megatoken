@@ -14,14 +14,7 @@ class Config:
 	rolling_n = 100
 
 	t5 = "google/flan-t5-small"
-	model_dim = 512
-	head_num = 8
-	fc_dim = 2048
-	activation = "gelu"
-
-	encoder_layers = 6
+	volume_threshold = 0.1
+	decoder_visibility = 3
 	temperature = 0.1
-	bias = 2
-
-	decoder_layers = 2
-	decoder_visibility = 7
+	bias = 5
