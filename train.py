@@ -73,7 +73,7 @@ def main():
 		loss_volume = (result.volume[:, -1] - 1) / input_length
 		loss_volume = (loss_volume ** 2).mean()
 		loss_class = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
-		loss = loss_class + 5 * loss_volume
+		loss = loss_class + 50 * loss_volume
 
 		loss.backward()
 		optimizer.step()
