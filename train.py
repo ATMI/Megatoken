@@ -25,7 +25,7 @@ def main():
 	model = model.to(device)
 	optimizer = optim.Adam(model.parameters(), Config.lr)
 
-	# init = torch.load("checkpoint.pth", map_location=device, weights_only=True)
+	# init = torch.load("16247.pth", map_location=device, weights_only=True)
 	# model.load_state_dict(init["model"])
 	# optimizer.load_state_dict(init["optimizer"])
 
@@ -48,10 +48,10 @@ def main():
 		torch.save(state, path)
 
 	def interrupt(_, __):
-		if not prompt("Interrupt? "):
-			return
 		if prompt("Checkpoint? "):
 			checkpoint("checkpoint.pth")
+		if not prompt("Interrupt? "):
+			return
 		finish()
 
 	signal.signal(signal.SIGINT, interrupt)
@@ -70,10 +70,11 @@ def main():
 		)
 
 		input_length = batch.pad_mask.sum(dim=1)
-		loss_volume = (result.volume[:, -1] - 1) / input_length
-		loss_volume = (loss_volume ** 2).mean()
+		loss_volume = result.volume[:, -1] / input_length
+		loss_volume = loss_volume.mean()
+
 		loss_class = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
-		loss = loss_class + 50 * loss_volume
+		loss = loss_class + 3 * loss_volume
 
 		loss.backward()
 		optimizer.step()

@@ -13,12 +13,12 @@ class Config:
 
 	seed = 42
 	lr = 0.0001
-	batch_size = 16
-	rolling_n = 100
+	batch_size = 20
+	rolling_n = 10
 
-	decoder_visibility = 4
+	decoder_visibility = 5
 	temperature = 0.1
-	bias = 3
+	bias = 120
 
 
 tokenizer = AutoTokenizer.from_pretrained(Config.model)

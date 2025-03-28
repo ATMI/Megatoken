@@ -3,6 +3,7 @@ from typing import Tuple
 
 import torch
 from torch import nn, Tensor
+from torch.nn import functional as fn
 from transformers import T5ForConditionalGeneration
 
 
@@ -17,9 +18,11 @@ class Gate(nn.Module):
 		embeds: Tensor,
 	) -> Tuple[Tensor, Tensor]:
 		gates = (embeds[:, :, 0] + self.bias) / self.temperature
-		gates = gates.sigmoid()
-		gates = gates.clamp(min=1e-10, max=1)
-		embeds = embeds * gates.unsqueeze(2)
+		alphas = gates.sigmoid()
+
+		embeds = embeds * alphas.unsqueeze(2)
+		gates = fn.logsigmoid(gates)
+
 		return embeds, gates
 
 
@@ -46,10 +49,7 @@ class Model(nn.Module):
 	):
 		super(Model, self).__init__()
 		self.t5 = T5ForConditionalGeneration.from_pretrained(name)
-		self.gates = nn.ModuleList(
-			Gate(bias, temperature)
-			for _ in self.t5.encoder.block
-		)
+		self.gate = Gate(bias, temperature)
 
 	def encode(
 		self,
@@ -74,7 +74,7 @@ class Model(nn.Module):
 		gate_mask = torch.zeros(input_length, device=device)
 
 		diag_indices = torch.arange(input_length, device=device)
-		volume = torch.zeros((batch_size, len(self.gates)), device=device)
+		volume = torch.zeros((batch_size, len(self.t5.encoder.block)), device=device)
 
 		# Kinda strange variable with cache disabled,
 		# but it's used to calculate the position bias
@@ -85,7 +85,7 @@ class Model(nn.Module):
 		embeds = self.t5.encoder.embed_tokens(tokens)
 		embeds = self.t5.encoder.dropout(embeds)
 
-		for i, (encoder_layer, gate_layer) in enumerate(zip(self.t5.encoder.block, self.gates)):
+		for i, encoder_layer in enumerate(self.t5.encoder.block):
 			embeds, position_bias = encoder_layer(
 				hidden_states=embeds,
 				attention_mask=attn_mask,
@@ -93,9 +93,7 @@ class Model(nn.Module):
 				cache_position=cache_position,
 			)
 
-			embeds, gates = gate_layer(embeds=embeds)
-			gates = gates.log()
-
+			embeds, gates = self.gate(embeds=embeds)
 			gate_mask = gate_mask + gates
 			volume[:, i] = (gate_mask.exp() * pad_mask).sum(dim=1)
 
