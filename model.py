@@ -18,14 +18,13 @@ class Gate(nn.Module):
 		embeds: Tensor,
 	) -> Tuple[Tensor, Tensor]:
 		gates = (embeds[:, :, 0] + self.bias) / self.temperature
-
 		scale = gates.sigmoid()
-		gates = fn.logsigmoid(gates)
 
-		# if self.training:
-		# else:
-		# 	scale = scale > 0.5
-		# 	gates = torch.where(scale, 0, -torch.inf)
+		if self.training:
+			gates = fn.logsigmoid(gates)
+		else:
+			scale = scale > 0.5
+			gates = torch.where(scale, 0, -torch.inf)
 
 		embeds = embeds * scale.unsqueeze(2)
 		return embeds, gates
