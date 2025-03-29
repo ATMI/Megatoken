@@ -70,7 +70,7 @@ def main():
 		)
 
 		input_length = batch.pad_mask.sum(dim=1)
-		loss_volume = result.volume[:, -1] / input_length
+		loss_volume = result.volume / input_length.unsqueeze(1)
 		loss_volume = loss_volume.mean()
 
 		loss_class = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
