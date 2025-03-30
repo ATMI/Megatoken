@@ -9,142 +9,137 @@ import shap
 import torch
 import numpy as np
 
-tokenizer = AutoTokenizer.from_pretrained(Config.model)
-model = prepare.model()
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-memory = None
-
-start_sent = "This cafe is a hidden gem! The cozy atmosphere and excellent coffee make it the perfect spot to relax and unwind. The staff are friendly and attentive, always ensuring that your cup is full."
-tokenized = tokenizer.encode(start_sent)[:-1]
-memory_ids = torch.tensor(tokenized).unsqueeze(0).to(device)
-input_ids = memory_ids[:,:5]
-
-checkpoint = torch.load("checkpoint.pth", map_location=device, weights_only=True)
-model.eval()
-model.load_state_dict(checkpoint["model"])
-model = model.to(device)
-correct_token_id = 5697
-
-
-def shap_predict(masked_indices):
-	"""
-    Runs inference with a modified gate mask where specific tokens are masked.
-    `masked_indices` is a binary mask of shape (seq_len,) indicating which tokens to mask.
-    """
-	masked_indices = torch.tensor(masked_indices, dtype=torch.bool, device=device)
-	#print("received masked_indices:", masked_indices)
-
-	valid_indices = (memory.gate_mask == 0)
-	full_mask = torch.zeros_like(memory.gate_mask, dtype=torch.bool, device=device)
-	full_mask[valid_indices] = masked_indices
-
-
-	modified_gate_mask = memory.gate_mask.clone()
-
-	modified_gate_mask[full_mask] = -torch.inf
-
-	result = model.decode(
-		memory=Model.Memory(
-			pad_mask=memory.pad_mask,
-			gate_mask=modified_gate_mask,
-			embeds=memory.embeds,
-			volume=memory.volume,
-		),
-		tokens=input_ids,
-		pad_mask=torch.ones((1, input_ids.shape[1]), dtype=torch.bool).to(device),
-		attn_mask=None
-	)
-
-	logits = result[:, -1, :]
-	probs = torch.softmax(logits, dim=-1)
-	correct_token_prob = probs[:, correct_token_id]
-
-	return correct_token_prob.cpu().detach().numpy()
+torch.set_grad_enabled(False)
 
 
 
-def show_result(batch,logits_batch):
-	for i in range(logits_batch.shape[0]):
-		inputs = batch.inputs[i].unsqueeze(0).expand(batch.inputs[i].shape[0],batch.inputs[i].shape[0])
-		labels = batch.labels[i]
-		decoder_mask = batch.decoder_mask[i]
-		logits = logits_batch[i] # S,V
-		masked_inputs = torch.where(decoder_mask == 0, inputs, torch.tensor(-100))
-		print(logits.shape)
-		logits = torch.argmax(logits, dim=-1)
-
-		decoded_texts = [
-			f"{tokenizer.decode(row[row != -100].tolist(), skip_special_tokens=True)}"
-			f" [{tokenizer.decode([labels[j].item()], skip_special_tokens=True)}]"
-			f"(predicted: [{tokenizer.decode([logits[j].item()], skip_special_tokens=True)}])"
-			if labels[j] != -100 else ""
-			for j, row in enumerate(masked_inputs)
-		]
-
-		print(decoded_texts)
-		break
-
-
-def main():
-	global model, memory, input_ids
-	torch.set_grad_enabled(False)
-
-
-	#test_loader, t_loader  = prepare.dataloaders()
-
-	memory = model.encode(
-		tokens=memory_ids,
-		pad_mask=torch.ones((1,memory_ids.shape[1]), dtype = torch.bool).to(device),
-		attn_mask=None,
-	)
-	print("original memory: ", memory.gate_mask)
-	original_gate_mask = memory.gate_mask
-	valid_indices = (original_gate_mask == 0).squeeze()
-	num_valid_tokens = valid_indices.sum().item()
-
-	data = torch.zeros((1, num_valid_tokens))
-	data = data.cpu().detach().numpy()
-
-	explainer = shap.KernelExplainer(shap_predict, data)
-
-	shap_values = explainer.shap_values(torch.eye(valid_indices.sum()).numpy())
-
-
+def plot(shap_values):
+	print(shap_values)
 
 	shap_values_np = np.array(shap_values).squeeze()
-	avg_shap_values = np.mean(np.abs(shap_values_np), axis=0)
+	individual_shap_values = np.diag(shap_values_np)
+	reversed_shap_values = -individual_shap_values
+
 	plt.figure(figsize=(12, 5))
-	plt.bar(range(len(avg_shap_values)), avg_shap_values)
+	plt.bar(range(len(reversed_shap_values)), reversed_shap_values)
 	plt.xlabel("Token Index (Valid Ones)")
-	plt.ylabel("SHAP Value (Importance)")
-	plt.title("Token Importance in Cross-Attention (Gate Mask Analysis)")
+	plt.ylabel("SHAP Value (Reversed Importance)")
+	plt.title("Reversed Token Importance in Cross-Attention (Gate Mask Analysis)")
 	plt.show()
 
 
 
-def generate_sentence(num_steps):
-	global model,input_ids,memory_ids
-	print("initial sequence: ", input_ids)
-	le = input_ids.shape[-1]
-	for i in range(num_steps):
-		result = model.forward(
-			memory_tokens = memory_ids,
-			memory_pad_mask = torch.ones((1,memory_ids.shape[1]), dtype = torch.bool).to(device),
-			memory_attn_mask = None,
 
-			input_tokens = input_ids,
-			input_pad_mask = torch.ones((1,input_ids.shape[1]), dtype = torch.bool).to(device),
-			input_attn_mask= None
 
+class SHAPexplainer():
+	def __init__(self):
+		self.tokenizer = AutoTokenizer.from_pretrained(Config.model)
+		self.model = prepare.model()
+		self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+		checkpoint = torch.load("checkpoint.pth", map_location=self.device, weights_only=True)
+		self.model.eval()
+		self.model.load_state_dict(checkpoint["model"])
+		self.model = self.model.to(self.device)
+
+		#buffer
+		self.correct_token_id = None
+		self.memory = None
+		self.input_ids = None
+
+	def shap_eval(self, sentence,steps):
+		tokenized = self.tokenizer.encode(start_sent)[:-1]
+		memory_ids = torch.tensor(tokenized).unsqueeze(0).to(self.device)
+		self.memory = self.model.encode(
+			tokens=memory_ids,
+			pad_mask=torch.ones((1, memory_ids.shape[1]), dtype=torch.bool).to(self.device),
+			attn_mask=None,
+		)
+		self.input_ids = memory_ids[:, :1]
+
+		tokens = self.generate_tokens(steps,memory_ids)
+		print(tokens)
+		print(self.tokenizer.decode(tokens.squeeze(0).tolist(), skip_special_tokens=False))
+		values_array = []
+		for i in range(1,steps):
+			self.input_ids = memory_ids[:, :i]
+			self.correct_token_id = tokens[:,i]
+			data, total_inds = self.prepare_data()
+			explainer = shap.KernelExplainer(self.shap_predict, data)
+			shap_values = explainer.shap_values(torch.eye(total_inds).numpy())
+			values_array.append(shap_values)
+
+		return values_array
+
+	def generate_tokens(self,num_steps,memory_ids):
+		tokens = self.input_ids.clone()
+		for i in range(num_steps):
+			result = self.model.forward(
+				memory_tokens=memory_ids,
+				memory_pad_mask=torch.ones((1, memory_ids.shape[1]), dtype=torch.bool).to(self.device),
+				memory_attn_mask=None,
+
+				input_tokens=tokens,
+				input_pad_mask=torch.ones((1, tokens.shape[1]), dtype=torch.bool).to(self.device),
+				input_attn_mask=None
+
+			)
+
+			logits = result.logits[:, -1, :]
+			prediction = torch.argmax(logits, dim=-1).unsqueeze(0)
+			tokens = torch.cat((tokens, prediction), dim=-1)
+
+		return tokens
+
+	def shap_predict(self,masked_indices):
+		"""
+	    Runs inference with a modified gate mask where specific tokens are masked.
+	    `masked_indices` is a binary mask of shape (seq_len,) indicating which tokens to mask.
+	    """
+		masked_indices = torch.tensor(masked_indices, dtype=torch.bool, device=self.device)
+		# print("received masked_indices:", masked_indices)
+
+		valid_indices = (self.memory.gate_mask == 0)
+		full_mask = torch.zeros_like(self.memory.gate_mask, dtype=torch.bool, device=self.device)
+		full_mask[valid_indices] = masked_indices
+
+		modified_gate_mask = self.memory.gate_mask.clone()
+
+		modified_gate_mask[full_mask] = -torch.inf
+
+		result = self.model.decode(
+			memory=Model.Memory(
+				pad_mask=self.memory.pad_mask,
+				gate_mask=modified_gate_mask,
+				embeds=self.memory.embeds,
+				volume=self.memory.volume,
+			),
+			tokens=self.input_ids,
+			pad_mask=torch.ones((1, self.input_ids.shape[1]), dtype=torch.bool).to(self.device),
+			attn_mask=None
 		)
 
-		logits = result.logits[:,-1,:]
-		prediction = torch.argmax(logits,dim=-1).unsqueeze(0)
-		input_ids = torch.cat((input_ids,prediction),dim=-1)
+		logits = result[:, -1, :]
+		probs = torch.softmax(logits, dim=-1)
+		correct_token_prob = probs[:, self.correct_token_id]
 
-	print(tokenizer.decode(input_ids.squeeze(0).tolist(), skip_special_tokens=False))
-	print("final tokens: ", input_ids)
-	print("next token is: ", input_ids[0][le], "decoded as: ", tokenizer.decode(input_ids[0][le], skip_special_tokens=False))
+		return correct_token_prob.cpu().detach().numpy()
+
+	def prepare_data(self):
+		original_gate_mask = self.memory.gate_mask
+		valid_indices = (original_gate_mask == 0).squeeze()
+		total_inds = valid_indices.sum()
+		num_valid_tokens = total_inds.item()
+		data = torch.zeros((1, num_valid_tokens))
+		data = data.cpu().detach().numpy()
+		return data,total_inds
+
+
+
 
 if __name__ == "__main__":
-	main()
+	start_sent = "This cafe is a hidden gem! The cozy atmosphere and excellent coffee make it the perfect spot to relax and unwind. The staff are friendly and attentive, always ensuring that your cup is full."
+	shaper = SHAPexplainer()
+	results = shaper.shap_eval(start_sent,6)
+
+	plot(results[4])
