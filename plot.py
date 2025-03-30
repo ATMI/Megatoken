@@ -1,5 +1,4 @@
 import json
-import math
 from collections import defaultdict
 
 import matplotlib.pyplot as plt
@@ -61,8 +60,8 @@ def main():
 		y_loc="lower left",
 
 		# z=[math.sqrt(v) for v in data["volume~"]],
-		z=data["volume~"],
-		z_label="volume",
+		z=data["ratio~"],
+		z_label="ratio",
 		z_color="red",
 		z_loc="upper right",
 	)
