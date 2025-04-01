@@ -69,16 +69,12 @@ def main():
 			input_attn_mask=batch.decoder_mask,
 		)
 
-		input_lengths = batch.pad_mask.sum(dim=1)
-		ratio = result.volume[:, -1] / input_lengths
-		ratio = ratio.mean(dim=0).item()
-
-		input_lengths = input_lengths.unsqueeze(1)
-		loss_volume = result.volume / input_lengths
-		loss_volume = loss_volume.mean(dim=1).mean(dim=0)
+		input_length = batch.pad_mask.sum(dim=1)
+		loss_volume = result.volume / input_length.unsqueeze(1)
+		loss_volume = loss_volume.mean()
 
 		loss_class = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
-		loss = loss_class + 5 * loss_volume
+		loss = loss_class + 3 * loss_volume
 
 		loss.backward()
 		optimizer.step()
@@ -89,14 +85,13 @@ def main():
 		loss_class = loss_class.item()
 		loss = loss.item()
 
-		acc_, loss_, loss_volume_, loss_class_, ratio_ = rolling(acc, loss, loss_volume, loss_class, ratio)
+		acc_, loss_, loss_volume_, loss_class_ = rolling(acc, loss, loss_volume, loss_class)
 
 		log = {
 			"acc": acc, "acc~": acc_,
 			"loss": loss, "loss~": loss_,
 			"class": loss_class, "class~": loss_class_,
 			"volume": loss_volume, "volume~": loss_volume_,
-			"ratio": ratio, "ratio~": ratio_,
 		}
 		log_file.write(json.dumps(log) + "\n")
 		log_file.flush()
@@ -106,7 +101,6 @@ def main():
 			"loss": f"{loss_:.3f}",
 			"class": f"{loss_class_:.3f}",
 			"volume": f"{loss_volume_:.3f}",
-			"ratio": f"{ratio_ * 100:.2f}",
 		}
 		bar.set_postfix(**postfix)
 		bar.update(1)

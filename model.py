@@ -18,15 +18,13 @@ class Gate(nn.Module):
 		embeds: Tensor,
 	) -> Tuple[Tensor, Tensor]:
 		gates = (embeds[:, :, 0] + self.bias) / self.temperature
-		scale = gates.sigmoid()
 
 		if self.training:
 			gates = fn.logsigmoid(gates)
 		else:
-			scale = scale > 0.5
-			gates = torch.where(scale, 0, -torch.inf)
+			gates = gates.sigmoid() > 0.5
+			gates = torch.where(gates, 0, -torch.inf)
 
-		embeds = embeds * scale.unsqueeze(2)
 		return embeds, gates
 
 
@@ -78,7 +76,7 @@ class Model(nn.Module):
 		gate_mask = torch.zeros(input_length, device=device)
 
 		diag_indices = torch.arange(input_length, device=device)
-		volume = torch.zeros((batch_size, len(self.t5.encoder.block) // 2), device=device)
+		volume = torch.zeros((batch_size, len(self.t5.encoder.block)), device=device)
 
 		# Kinda strange variable with cache disabled,
 		# but it's used to calculate the position bias
@@ -97,19 +95,17 @@ class Model(nn.Module):
 				cache_position=cache_position,
 			)
 
-			if i % 2 == 0:
-				continue
+			# if i % 2 == 0:
+			# 	continue
 
 			embeds, gates = self.gate(embeds=embeds)
 			gate_mask = gate_mask + gates
-			volume[:, i // 2] = (gate_mask.exp() * pad_mask).sum(dim=1)
+			volume[:, i] = (gate_mask.exp() * pad_mask).sum(dim=1)
 
-			gates = gates.unsqueeze(2)
-			gates = gates.repeat(1, 1, input_length)
-			gates = gates.unsqueeze(1)
-			gates[:, :, diag_indices, diag_indices] = 0
+			gates = gates.unsqueeze(1) + gates.unsqueeze(2)
+			gates[:, diag_indices, diag_indices] = 0.0
 
-			attn_mask = attn_mask + gates
+			attn_mask = attn_mask + gates.unsqueeze(1)
 
 		embeds = self.t5.encoder.final_layer_norm(embeds)
 		embeds = self.t5.encoder.dropout(embeds)

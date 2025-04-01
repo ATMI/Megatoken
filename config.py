@@ -18,7 +18,7 @@ class Config:
 
 	decoder_visibility = 5
 	temperature = 0.1
-	bias = 120
+	bias = 40
 
 
 tokenizer = AutoTokenizer.from_pretrained(Config.model)

@@ -1,5 +1,6 @@
 import json
 from collections import defaultdict
+from typing import Tuple
 
 import matplotlib.pyplot as plt
 
@@ -26,6 +27,10 @@ def dual_plot(
 
 	y_loc: str = "lower left",
 	z_loc: str = "upper right",
+
+	x_lim: Tuple[float, float] | None = None,
+	y_lim: Tuple[float, float] | None = None,
+	z_lim: Tuple[float, float] | None = None,
 ):
 	fig, ax1 = plt.subplots()
 	ax1.plot(
@@ -44,6 +49,16 @@ def dual_plot(
 	ax1.legend(loc=y_loc)
 	ax2.legend(loc=z_loc)
 
+	if y_lim is not None:
+		ax1.set_ylim(*y_lim)
+
+	if z_lim is not None:
+		ax2.set_ylim(*z_lim)
+
+	if x_lim is not None:
+		ax1.set_xlim(*x_lim)
+		ax2.set_xlim(*x_lim)
+
 	plt.show()
 
 
@@ -53,17 +68,20 @@ def main():
 	# Volume and accuracy
 	dual_plot(
 		x=data["step"],
+		x_lim=(0, 20000),
 
 		y=data["acc~"],
 		y_label="accuracy",
 		y_color="green",
 		y_loc="lower left",
+		y_lim=(0, 100),
 
 		# z=[math.sqrt(v) for v in data["volume~"]],
-		z=data["ratio~"],
-		z_label="ratio",
+		z=data["volume~"],
+		z_label="volume",
 		z_color="red",
-		z_loc="upper right",
+		z_loc="lower right",
+		z_lim=(0, 1),
 	)
 
 	# Class and volume losses
