@@ -43,6 +43,9 @@ class Model(nn.Module):
 		embeds: Tensor
 		volume: Tensor
 
+		attn_scores: Tensor
+		gates: Tensor
+
 	def __init__(
 		self,
 		name: str,
@@ -87,18 +90,24 @@ class Model(nn.Module):
 		embeds = self.t5.encoder.embed_tokens(tokens)
 		embeds = self.t5.encoder.dropout(embeds)
 
+		all_attn = []
+		all_gates = []
+
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
-			embeds, position_bias = encoder_layer(
+			embeds, position_bias, attention_matrix = encoder_layer(
 				hidden_states=embeds,
 				attention_mask=attn_mask,
 				position_bias=position_bias,
 				cache_position=cache_position,
+				output_attentions=True
 			)
 
 			# if i % 2 == 0:
 			# 	continue
 
 			embeds, gates = self.gate(embeds=embeds)
+			all_gates.append(gates.squeeze(0))
+			all_attn.append(attention_matrix.squeeze(0))
 			gate_mask = gate_mask + gates
 			volume[:, i] = (gate_mask.exp() * pad_mask).sum(dim=1)
 
@@ -116,6 +125,8 @@ class Model(nn.Module):
 
 			embeds=embeds,
 			volume=volume,
+			attn_scores=torch.stack(all_attn),
+			gates=torch.stack(all_gates),
 		)
 
 	def decode(
