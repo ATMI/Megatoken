@@ -85,8 +85,6 @@ class Model(nn.Module):
 		# but it's used to calculate the position bias
 		# in HF spaghetti. Trust me :)
 		cache_position = torch.arange(input_length, device=device)
-		position_bias = None
-
 		embeds = self.t5.encoder.embed_tokens(tokens)
 		embeds = self.t5.encoder.dropout(embeds)
 
@@ -94,10 +92,10 @@ class Model(nn.Module):
 		all_gates = []
 
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
-			embeds, position_bias, attention_matrix = encoder_layer(
+			embeds[:,:,0] = 0.0
+			embeds, _, attn_scores = encoder_layer(
 				hidden_states=embeds,
 				attention_mask=attn_mask,
-				position_bias=position_bias,
 				cache_position=cache_position,
 				output_attentions=True
 			)
@@ -107,13 +105,15 @@ class Model(nn.Module):
 
 			embeds, gates = self.gate(embeds=embeds)
 			all_gates.append(gates.squeeze(0))
-			all_attn.append(attention_matrix.squeeze(0))
+			all_attn.append(attn_scores.squeeze(0))
 			gate_mask = gate_mask + gates
-			volume[:, i] = (gate_mask.exp() * pad_mask).sum(dim=1)
+
+			attn_scores[:, :, diag_indices, diag_indices] = 0.0
+			volume[:, i] = (attn_scores.sum(dim=3).mean(dim=1) * pad_mask).sum(dim=1)
+			# volume[:, i] = (gate_mask.exp() * pad_mask).sum(dim=1)
 
 			gates = gates.unsqueeze(1) + gates.unsqueeze(2)
 			gates[:, diag_indices, diag_indices] = 0.0
-
 			attn_mask = attn_mask + gates.unsqueeze(1)
 
 		embeds = self.t5.encoder.final_layer_norm(embeds)
@@ -157,10 +157,7 @@ class Model(nn.Module):
 		cross_attn_mask = cross_attn_mask[:, None, None, :]
 		# cross_attn_mask = cross_attn_mask.repeat(1, 1, input_length, 1)
 
-		self_position_bias = None
-		cross_position_bias = None
 		cache_position = torch.arange(input_length, device=device)
-
 		input_embeds = self.t5.decoder.embed_tokens(tokens)
 		input_embeds = self.t5.decoder.dropout(input_embeds)
 
@@ -170,7 +167,6 @@ class Model(nn.Module):
 			input_embeds, _, self_position_bias = self_attn(
 				hidden_states=input_embeds,
 				attention_mask=self_attn_mask,
-				position_bias=self_position_bias,
 				cache_position=cache_position,
 			)
 
@@ -178,7 +174,6 @@ class Model(nn.Module):
 				hidden_states=input_embeds,
 				key_value_states=memory.embeds,
 				attention_mask=cross_attn_mask,
-				position_bias=cross_position_bias,
 				cache_position=cache_position,
 			)
 
