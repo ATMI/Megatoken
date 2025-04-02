@@ -88,6 +88,7 @@ class Model(nn.Module):
 		embeds = self.t5.encoder.dropout(embeds)
 
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
+			embeds[:, :, 0] = 0.0
 			embeds, position_bias = encoder_layer(
 				hidden_states=embeds,
 				attention_mask=attn_mask,
