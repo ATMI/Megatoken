@@ -25,7 +25,7 @@ def main():
 	model = model.to(device)
 	optimizer = optim.Adam(model.parameters(), Config.lr)
 
-	# init = torch.load("16247.pth", map_location=device, weights_only=True)
+	# init = torch.load("checkpoint.pth", map_location=device, weights_only=True)
 	# model.load_state_dict(init["model"])
 	# optimizer.load_state_dict(init["optimizer"])
 
@@ -72,9 +72,12 @@ def main():
 		input_length = batch.pad_mask.sum(dim=1)
 		loss_volume = result.volume / input_length.unsqueeze(1)
 		loss_volume = loss_volume.mean()
-
 		loss_class = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
-		loss = loss_class + 3 * loss_volume
+
+		if step > 1000:
+			loss = loss_class + 3 * loss_volume
+		else:
+			loss = loss_class
 
 		loss.backward()
 		optimizer.step()
