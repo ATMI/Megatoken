@@ -17,7 +17,9 @@ class Gate(nn.Module):
 		self,
 		embeds: Tensor,
 	) -> Tuple[Tensor, Tensor]:
-		gates = (embeds[:, :, 0] + self.bias) / self.temperature
+		# gumbels = -(-torch.rand(gates.shape).log()).log()
+		gates = embeds[:, :, 0]
+		gates = (gates + self.bias) / self.temperature
 
 		if self.training:
 			gates = fn.logsigmoid(gates)
@@ -82,18 +84,16 @@ class Model(nn.Module):
 		# but it's used to calculate the position bias
 		# in HF spaghetti. Trust me :)
 		cache_position = torch.arange(input_length, device=device)
-		position_bias = None
-
 		embeds = self.t5.encoder.embed_tokens(tokens)
 		embeds = self.t5.encoder.dropout(embeds)
 
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
-			embeds[:, :, 0] = 0.0
-			embeds, position_bias = encoder_layer(
+			# embeds[:, :, 0] = 0.0
+			embeds, _, attn_scores = encoder_layer(
 				hidden_states=embeds,
 				attention_mask=attn_mask,
-				position_bias=position_bias,
 				cache_position=cache_position,
+				output_attentions=True,
 			)
 
 			# if i % 2 == 0:
@@ -101,12 +101,14 @@ class Model(nn.Module):
 
 			embeds, gates = self.gate(embeds=embeds)
 			gate_mask = gate_mask + gates
-			volume[:, i] = (gate_mask.exp() * pad_mask).sum(dim=1)
 
 			gates = gates.unsqueeze(1) + gates.unsqueeze(2)
 			gates[:, diag_indices, diag_indices] = 0.0
-
 			attn_mask = attn_mask + gates.unsqueeze(1)
+
+			# attn_scores[:, :, diag_indices, diag_indices] = attn_scores[:, :, diag_indices, diag_indices] - 1.0
+			attn_scores = attn_scores * (1 - torch.eye(input_length, device=device))
+			volume[:, i] = ((attn_scores.sum(dim=3)).mean(dim=1) * pad_mask).sum(dim=1)
 
 		embeds = self.t5.encoder.final_layer_norm(embeds)
 		embeds = self.t5.encoder.dropout(embeds)
@@ -147,28 +149,23 @@ class Model(nn.Module):
 		cross_attn_mask = cross_attn_mask[:, None, None, :]
 		# cross_attn_mask = cross_attn_mask.repeat(1, 1, input_length, 1)
 
-		self_position_bias = None
-		cross_position_bias = None
 		cache_position = torch.arange(input_length, device=device)
-
 		input_embeds = self.t5.decoder.embed_tokens(tokens)
 		input_embeds = self.t5.decoder.dropout(input_embeds)
 
 		for i, decoder_layer in enumerate(self.t5.decoder.block):
 			self_attn, cross_attn, fc = decoder_layer.layer
 
-			input_embeds, _, self_position_bias = self_attn(
+			input_embeds, _, _ = self_attn(
 				hidden_states=input_embeds,
 				attention_mask=self_attn_mask,
-				position_bias=self_position_bias,
 				cache_position=cache_position,
 			)
 
-			input_embeds, _, cross_position_bias = cross_attn(
+			input_embeds, _, _ = cross_attn(
 				hidden_states=input_embeds,
 				key_value_states=memory.embeds,
 				attention_mask=cross_attn_mask,
-				position_bias=cross_position_bias,
 				cache_position=cache_position,
 			)
 

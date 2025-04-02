@@ -63,6 +63,7 @@ def dual_plot(
 
 
 def main():
+	# data = load("log/8c2776cf0757e9dbf152611ab066cbedf868b1aa.json")
 	data = load("log.json")
 
 	# Volume and accuracy
