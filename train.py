@@ -25,9 +25,9 @@ def main():
 	model = model.to(device)
 	optimizer = optim.Adam(model.parameters(), Config.lr)
 
-	# init = torch.load("checkpoint.pth", map_location=device, weights_only=True)
-	# model.load_state_dict(init["model"])
-	# optimizer.load_state_dict(init["optimizer"])
+	init = torch.load("checkpoint.pth", map_location=device, weights_only=True)
+	model.load_state_dict(init["model"])
+	optimizer.load_state_dict(init["optimizer"])
 
 	step_num = len(train_loader)
 	bar = tqdm(total=step_num)
