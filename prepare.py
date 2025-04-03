@@ -29,7 +29,7 @@ def dataset():
 
 	ds = datasets.load_dataset(Config.dataset)
 	ds = ds.map(tokenize, batched=True, num_proc=4)
-	ds = ds.select_columns(["tokens"])
+	# ds = ds.select_columns(["tokens"])
 	ds.save_to_disk(path)
 
 	return ds

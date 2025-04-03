@@ -15,12 +15,15 @@ class Batch:
 	pad_mask: Tensor
 	decoder_mask: Tensor
 
+	sentiment: Tensor
+
 	def to(self, device) -> "Batch":
 		return Batch(
 			self.inputs.to(device),
 			self.labels.to(device),
 			self.pad_mask.to(device),
 			self.decoder_mask.to(device),
+			self.sentiment.to(device),
 		)
 
 	@staticmethod
@@ -46,4 +49,8 @@ class Batch:
 			decoder_mask[:, i:i + Config.decoder_visibility + 1, i] = 0
 		decoder_mask[:, :, 0] = 0
 
-		return Batch(inputs, labels, pad_mask, decoder_mask)
+		sentiments = [0 if row["label"] < 3 else 1 for row in batch]
+		sentiments = torch.tensor(sentiments, dtype=torch.float)
+
+
+		return Batch(inputs, labels, pad_mask, decoder_mask, sentiments)
