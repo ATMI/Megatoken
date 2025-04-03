@@ -89,13 +89,13 @@ class Model(nn.Module):
 		embeds = self.t5.encoder.dropout(embeds)
 
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
-			# embeds[:, :, 0] = 0.0
+			embeds[:, :, 0] = 0.0
 			embeds, attn_mask = encoder_layer(
 				hidden_states=embeds,
 				cache_position=cache_position,
 				attention_mask=attn_mask,
-				# position_bias=attn_mask if i > 0 else None,
-				position_bias=None,
+				position_bias=attn_mask if i > 0 else None,
+				# position_bias=None,
 			)
 
 			embeds, gates = self.gate(embeds=embeds)
@@ -152,21 +152,21 @@ class Model(nn.Module):
 		for i, decoder_layer in enumerate(self.t5.decoder.block):
 			self_attn, cross_attn, fc = decoder_layer.layer
 
-			input_embeds, _, _ = self_attn(
+			input_embeds, self_attn_mask, _ = self_attn(
 				hidden_states=input_embeds,
 				cache_position=cache_position,
 				attention_mask=self_attn_mask,
-				# position_bias=self_attn_mask if i > 0 else None,
-				position_bias=None,
+				position_bias=self_attn_mask if i > 0 else None,
+				# position_bias=None,
 			)
 
-			input_embeds, _, _ = cross_attn(
+			input_embeds, cross_attn_mask, _ = cross_attn(
 				hidden_states=input_embeds,
 				key_value_states=memory.embeds,
 				cache_position=cache_position,
 				attention_mask=cross_attn_mask,
-				# position_bias=cross_attn_mask if i > 0 else None,
-				position_bias=None,
+				position_bias=cross_attn_mask if i > 0 else None,
+				# position_bias=None,
 			)
 
 			input_embeds = fc(input_embeds)
