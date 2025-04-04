@@ -1,4 +1,5 @@
 import json
+import math
 from collections import defaultdict
 from typing import Tuple
 
@@ -84,34 +85,6 @@ def main():
 		z_loc="lower right",
 		z_lim=(0, 1),
 	)
-
-	# Class and volume losses
-	"""
-	dual_plot(
-		x=data["step"],
-
-		y=data["class~"],
-		y_label="class",
-		y_color="green",
-
-		z=data["volume~"],
-		z_label="volume",
-		z_color="red",
-	)
-
-	# Loss and accuracy
-	dual_plot(
-		x=data["step"],
-
-		y=data["loss~"],
-		y_label="loss",
-		y_color="green",
-
-		z=data["acc~"],
-		z_label="accuracy",
-		z_color="red",
-	)
-	"""
 
 
 if __name__ == "__main__":

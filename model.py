@@ -27,6 +27,7 @@ class Gate(nn.Module):
 			gates = gates.sigmoid() > 0.5
 			gates = torch.where(gates, 0, -torch.inf)
 
+		# gates[:, 0] = 0
 		return embeds, gates
 
 
@@ -94,29 +95,24 @@ class Model(nn.Module):
 		all_gates = []
 
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
-			# embeds[:, :, 0] = 0.0
-			embeds, _, attn_scores = encoder_layer(
+			embeds[:, :, 0] = 0.0
+			embeds, attn_mask = encoder_layer(
 				hidden_states=embeds,
-				attention_mask=attn_mask,
 				cache_position=cache_position,
-				output_attentions=True,
+				attention_mask=attn_mask,
+				position_bias=attn_mask if i > 0 else None,
+				# position_bias=None,
 			)
-
-			# if i % 2 == 0:
-			# 	continue
 
 			embeds, gates = self.gate(embeds=embeds)
 			all_gates.append(gates.squeeze(0))
 			all_attn.append(attn_scores.squeeze(0))
 			gate_mask = gate_mask + gates
+			volume[:, i] = (gate_mask.exp() * pad_mask).sum(dim=1)
 
 			gates = gates.unsqueeze(1) + gates.unsqueeze(2)
 			gates[:, diag_indices, diag_indices] = 0.0
 			attn_mask = attn_mask + gates.unsqueeze(1)
-
-			# attn_scores[:, :, diag_indices, diag_indices] = attn_scores[:, :, diag_indices, diag_indices] - 1.0
-			attn_scores = attn_scores * (1 - torch.eye(input_length, device=device))
-			volume[:, i] = ((attn_scores.sum(dim=3)).mean(dim=1) * pad_mask).sum(dim=1)
 
 		embeds = self.t5.encoder.final_layer_norm(embeds)
 		embeds = self.t5.encoder.dropout(embeds)
@@ -166,17 +162,21 @@ class Model(nn.Module):
 		for i, decoder_layer in enumerate(self.t5.decoder.block):
 			self_attn, cross_attn, fc = decoder_layer.layer
 
-			input_embeds, _, _ = self_attn(
+			input_embeds, _, self_attn_mask = self_attn(
 				hidden_states=input_embeds,
-				attention_mask=self_attn_mask,
 				cache_position=cache_position,
+				attention_mask=self_attn_mask,
+				position_bias=self_attn_mask if i > 0 else None,
+				# position_bias=None,
 			)
 
-			input_embeds, _, _ = cross_attn(
+			input_embeds, _, cross_attn_mask = cross_attn(
 				hidden_states=input_embeds,
 				key_value_states=memory.embeds,
-				attention_mask=cross_attn_mask,
 				cache_position=cache_position,
+				attention_mask=cross_attn_mask,
+				position_bias=cross_attn_mask if i > 0 else None,
+				# position_bias=None,
 			)
 
 			input_embeds = fc(input_embeds)

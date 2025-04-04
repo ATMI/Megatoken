@@ -74,7 +74,7 @@ def main():
 		loss_volume = loss_volume.mean()
 		loss_class = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
 
-		if step > 1000:
+		if step > 500:
 			loss = loss_class + 3 * loss_volume
 		else:
 			loss = loss_class
