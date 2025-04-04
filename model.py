@@ -152,7 +152,7 @@ class Model(nn.Module):
 		for i, decoder_layer in enumerate(self.t5.decoder.block):
 			self_attn, cross_attn, fc = decoder_layer.layer
 
-			input_embeds, self_attn_mask, _ = self_attn(
+			input_embeds, _, self_attn_mask = self_attn(
 				hidden_states=input_embeds,
 				cache_position=cache_position,
 				attention_mask=self_attn_mask,
@@ -160,7 +160,7 @@ class Model(nn.Module):
 				# position_bias=None,
 			)
 
-			input_embeds, cross_attn_mask, _ = cross_attn(
+			input_embeds, _, cross_attn_mask = cross_attn(
 				hidden_states=input_embeds,
 				key_value_states=memory.embeds,
 				cache_position=cache_position,

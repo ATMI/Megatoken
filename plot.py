@@ -70,7 +70,7 @@ def main():
 	# Volume and accuracy
 	dual_plot(
 		x=data["step"],
-		x_lim=(0, 10000),
+		x_lim=(0, 20000),
 
 		y=data["acc~"],
 		y_label="accuracy",
