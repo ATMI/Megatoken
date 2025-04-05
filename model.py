@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Tuple
 
+import math
 import torch
 from torch import nn, Tensor
 from torch.nn import functional as fn
@@ -8,7 +9,11 @@ from transformers import T5ForConditionalGeneration
 
 
 class Gate(nn.Module):
-	def __init__(self, bias: float, temperature: float):
+	def __init__(
+		self,
+		bias: float,
+		temperature: float,
+	):
 		super(Gate, self).__init__()
 		self.bias = bias
 		self.temperature = temperature
@@ -16,19 +21,14 @@ class Gate(nn.Module):
 	def forward(
 		self,
 		embeds: Tensor,
-	) -> Tuple[Tensor, Tensor]:
-		# gumbels = -(-torch.rand(gates.shape).log()).log()
+	) -> Tuple[Tensor]:
 		gates = embeds[:, :, 0]
-		gates = (gates + self.bias) / self.temperature
 
-		if self.training:
-			gates = fn.logsigmoid(gates)
-		else:
-			gates = gates.sigmoid() > 0.5
-			gates = torch.where(gates, 0, -torch.inf)
+		gumbels = -torch.empty_like(gates, memory_format=torch.legacy_contiguous_format).exponential_().log()
+		gumbels = (gates + gumbels + self.bias) / self.temperature
+		gumbels = fn.logsigmoid(gumbels)
 
-		# gates[:, 0] = 0
-		return embeds, gates
+		return gumbels
 
 
 class Model(nn.Module):
@@ -68,6 +68,7 @@ class Model(nn.Module):
 		device = tokens.device
 		batch_size = tokens.size(0)
 		input_length = tokens.size(1)
+		model_dim = self.t5.model_dim
 
 		if attn_mask is None:
 			mask_size = (batch_size, input_length, input_length)
@@ -104,11 +105,11 @@ class Model(nn.Module):
 				# position_bias=None,
 			)
 
-			embeds, gates = self.gate(embeds=embeds)
+			gates = self.gate(embeds=embeds)
 			all_gates.append(gates.squeeze(0))
 			all_attn.append(attn_scores.squeeze(0))
 			gate_mask = gate_mask + gates
-			volume[:, i] = (gate_mask.exp() * pad_mask).sum(dim=1)
+			volume[:, i] = ((gate_mask / math.sqrt(model_dim)).exp() * pad_mask).sum(dim=1)
 
 			gates = gates.unsqueeze(1) + gates.unsqueeze(2)
 			gates[:, diag_indices, diag_indices] = 0.0
