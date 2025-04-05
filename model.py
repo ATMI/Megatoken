@@ -101,9 +101,8 @@ class Model(nn.Module):
 
 			gates = self.gate(embeds=embeds)
 			gate_mask = gate_mask + gates
-			volume[:, i] = (gate_mask.exp() * pad_mask).sum(dim=1)
+			volume[:, i] = ((gate_mask / math.sqrt(model_dim)).exp() * pad_mask).sum(dim=1)
 
-			gates = gates * math.sqrt(model_dim)
 			gates = gates.unsqueeze(1) + gates.unsqueeze(2)
 			gates[:, diag_indices, diag_indices] = 0.0
 			attn_mask = attn_mask + gates.unsqueeze(1)
@@ -131,7 +130,6 @@ class Model(nn.Module):
 		device = tokens.device
 		batch_size = tokens.size(0)
 		input_length = tokens.size(1)
-		model_dim = self.t5.model_dim
 
 		if attn_mask is None:
 			mask_size = (batch_size, input_length, input_length)
@@ -144,7 +142,7 @@ class Model(nn.Module):
 
 		self_attn_mask = attn_mask.unsqueeze(1)
 		cross_attn_mask = torch.where(memory.pad_mask, 0, -torch.inf)
-		cross_attn_mask = cross_attn_mask + memory.gate_mask * math.sqrt(model_dim)
+		cross_attn_mask = cross_attn_mask + memory.gate_mask
 		cross_attn_mask = cross_attn_mask[:, None, None, :]
 		# cross_attn_mask = cross_attn_mask.repeat(1, 1, input_length, 1)
 
