@@ -64,13 +64,13 @@ def dual_plot(
 
 
 def main():
-	# data = load("log/8c2776cf0757e9dbf152611ab066cbedf868b1aa.json")
+	# data = load("log/65ce082a56d48fc41c065e382e3513e4c5917dcf.json")
 	data = load("log.json")
 
 	# Volume and accuracy
 	dual_plot(
 		x=data["step"],
-		x_lim=(0, 20000),
+		x_lim=(0, 30000),
 
 		y=data["acc~"],
 		y_label="accuracy",
