@@ -97,12 +97,13 @@ class Model(nn.Module):
 
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
 			embeds[:, :, 0] = 0.0
-			embeds, attn_mask = encoder_layer(
+			embeds, attn_mask, attn_scores = encoder_layer(
 				hidden_states=embeds,
 				cache_position=cache_position,
 				attention_mask=attn_mask,
 				position_bias=attn_mask if i > 0 else None,
 				# position_bias=None,
+				output_attentions=True,
 			)
 
 			gates = self.gate(embeds=embeds)
