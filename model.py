@@ -83,7 +83,7 @@ class Model(nn.Module):
 		gate_mask = torch.zeros(input_length, device=device)
 
 		diag_indices = torch.arange(input_length, device=device)
-		volume = torch.zeros((batch_size, len(self.t5.encoder.block)), device=device)
+		volume = torch.zeros((batch_size, len(self.t5.encoder.block) // 2), device=device)
 
 		# Kinda strange variable with cache disabled,
 		# but it's used to calculate the position bias
@@ -106,15 +106,20 @@ class Model(nn.Module):
 				output_attentions=True,
 			)
 
+			if i % 2 == 0:
+				continue
+
 			gates = self.gate(embeds=embeds)
 			all_gates.append(gates.squeeze(0))
 			all_attn.append(attn_scores.squeeze(0))
 			gate_mask = gate_mask + gates
-			volume[:, i] = ((gate_mask / math.sqrt(model_dim)).exp() * pad_mask).sum(dim=1)
+			volume[:, i // 2] = ((gate_mask / math.sqrt(model_dim)).exp() * pad_mask).sum(dim=1)
 
 			gates = gates.unsqueeze(1) + gates.unsqueeze(2)
 			gates[:, diag_indices, diag_indices] = 0.0
 			attn_mask = attn_mask + gates.unsqueeze(1)
+
+			embeds[:, :, 0] = 0.0
 
 		embeds = self.t5.encoder.final_layer_norm(embeds)
 		embeds = self.t5.encoder.dropout(embeds)
