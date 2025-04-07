@@ -56,7 +56,10 @@ class Model(nn.Module):
 	):
 		super(Model, self).__init__()
 		self.t5 = T5ForConditionalGeneration.from_pretrained(name)
-		self.gates = nn.ModuleList(Gate(bias, temperature) for _ in self.t5.encoder.block)
+		self.gates = nn.ModuleList(
+			Gate(bias, temperature)
+			for _ in range(len(self.t5.encoder.block) // 2)
+		)
 
 	def encode(
 		self,
@@ -76,12 +79,13 @@ class Model(nn.Module):
 			mask = torch.where(pad_mask, 0, -torch.inf)
 			attn_mask = attn_mask + mask.unsqueeze(1)
 
+
 		# Adding dimension per attention head for HF compatibility
 		attn_mask = attn_mask.unsqueeze(1)
 		gate_mask = torch.zeros(input_length, device=device)
 		diag_mask = 1 - torch.eye(input_length, device=device)
 		diag_mask = diag_mask * pad_mask.unsqueeze(2)
-		volume = torch.zeros((batch_size, len(self.t5.encoder.block)), device=device)
+		volume = torch.zeros((batch_size, len(self.gates)), device=device)
 
 		# Kinda strange variable with cache disabled,
 		# but it's used to calculate the position bias
@@ -96,9 +100,9 @@ class Model(nn.Module):
 
 		heads_num = self.t5.config.num_heads
 		input_volume = pad_mask.sum(dim=1) * heads_num
+		indices = torch.arange(input_length, device=device)
 
-		for i, (encoder_layer, gate_layer) in enumerate(zip(self.t5.encoder.block, self.gates)):
-			embeds[:, :, 0] = 0.0
+		for i, encoder_layer in enumerate(self.t5.encoder.block):
 			embeds, attn_mask, attn_scores = encoder_layer(
 				hidden_states=embeds,
 				cache_position=cache_position,
@@ -109,6 +113,11 @@ class Model(nn.Module):
 				output_attentions=True,
 			)
 
+			if i % 2 == 0:
+				continue
+
+			i = i // 2
+			gate_layer = self.gates[i]
 			gate = gate_layer(embeds=embeds)
 			gate_mask = gate_mask + gate
 
@@ -122,8 +131,10 @@ class Model(nn.Module):
 			volume[:, i] = ratios
 
 			gate = gate.unsqueeze(1) + gate.unsqueeze(2)
-			gate = gate * diag_mask
 			attn_mask = attn_mask + gate.unsqueeze(1)
+
+			attn_mask[:, :, indices, indices] = 0.0
+			embeds[:, :, 0] = 0.0
 
 		embeds = self.t5.encoder.final_layer_norm(embeds)
 		embeds = self.t5.encoder.dropout(embeds)
