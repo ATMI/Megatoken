@@ -4,7 +4,6 @@ from typing import Tuple
 import torch
 from torch import nn, Tensor
 from torch.nn import functional as fn
-from torchvision.transforms.v2.functional import pad_mask
 from transformers import T5ForConditionalGeneration
 
 
