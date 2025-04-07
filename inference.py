@@ -28,7 +28,7 @@ def inference(
         return_tensors="pt",
     )["input_ids"].to(device)
     pad_mask = torch.ones_like(tokens, dtype=torch.bool).to(device)
-
+    print("Initial length:", tokens.size(1))
 
     # tokens = torch.tensor([[2940,594,47,269,11,8,313,47,1287,5,27,141,3,9,422,682,28,82,8179,11,79,237,2348,140,12,3,9,313,2478,12,143,417,27,530,132,7794,5,1333,7242,8833,5,305,4811,55,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]])
     # print(tokenizer.decode(tokens[0]))
@@ -46,9 +46,10 @@ def inference(
         )
 
     print("Volume:", memory.volume)
+    print((memory.gate_mask.exp() != 0).sum())
 
     out = tokens[0][:Config.decoder_visibility].unsqueeze(0)
-    print(tokenizer.decode(out[0]))
+    print("Given to decoder:",tokenizer.decode(out[0]))
 
     while True:
         seq_length = out.size(1)
@@ -90,7 +91,6 @@ def load_ckpt(model, ckpt_path: Path | str):
     checkpoint = torch.load(ckpt_path, map_location=torch.device("cpu"))
 
     model.load_state_dict(checkpoint["model"])
-    print("Loaded!")
     return model
 
 
@@ -185,8 +185,8 @@ def viz(model, tokenizer, text):
 def main():
     tokenizer = AutoTokenizer.from_pretrained(Config.model)
 
-    # text = "Good beer selection. Understaffed for a light Monday night crowd, it wasn't her fault she was the only server. But it took about an hour to get our sandwiches. Mine was one of the best reubens I've ever had."
-    text = "Very disappointed in the customer service. We ordered Reuben's and wanted coleslaw instead of kraut. They charged us $3.00 for the coleslaw. We will not be back . The iced tea is also terrible tasting."
+    text = "Good beer selection. Understaffed for a light Monday night crowd, it wasn't her fault she was the only server. But it took about an hour to get our sandwiches. Mine was one of the best reubens I've ever had."
+    # text = "Very disappointed in the customer service. We ordered Reuben's and wanted coleslaw instead of kraut. They charged us $3.00 for the coleslaw. We will not be back . The iced tea is also terrible tasting."
     # text = "Very nice restaurant! Will be back. Recommend trying Hawaiian pizza"
     # text = "Great breakfast, good price. You might have to stand outside in line though, so I don't really recommend winter time to go. lol. Very friendly service, interesting coffee mugs. They have great deserts and such also. Bring your cash though as they dont' take cards."
     # text = "Talk about overpriced. $18 for a fairly basic pasta with some obviously frozen chicken chopped up over it. The latter was terrible, thin and flabby and rather unappealing. The pasta itself was ok, as was the sauce. The desserts are pretty good. But honestly, that is a $10 dish whose price has been inflated."
