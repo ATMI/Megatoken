@@ -69,9 +69,7 @@ def main():
 			input_attn_mask=batch.decoder_mask,
 		)
 
-		input_length = batch.pad_mask.sum(dim=1)
-		loss_volume = result.volume / input_length.unsqueeze(1)
-		loss_volume = loss_volume.mean()
+		loss_volume = result.volume.mean()
 		loss_class = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
 
 		if step > 1000:
@@ -84,28 +82,30 @@ def main():
 		torch.cuda.empty_cache()
 
 		acc = accuracy(result.logits, batch.labels) * 100
+		ratio = result.volume[:, -1].mean().item() * 100
 		loss_volume = loss_volume.item()
 		loss_class = loss_class.item()
 		loss = loss.item()
 
-		acc_, loss_, loss_volume_, loss_class_ = rolling(acc, loss, loss_volume, loss_class)
+		acc_, ratio_, loss_, loss_volume_, loss_class_ = rolling(acc, ratio, loss, loss_volume, loss_class)
 
 		log = {
 			"acc": acc, "acc~": acc_,
-			"loss": loss, "loss~": loss_,
-			"class": loss_class, "class~": loss_class_,
-			"volume": loss_volume, "volume~": loss_volume_,
+			"los": loss, "los~": loss_,
+			"cls": loss_class, "cls~": loss_class_,
+			"vol": loss_volume, "vol~": loss_volume_,
+			"rat": ratio, "rat~": ratio_,
 		}
 		log_file.write(json.dumps(log) + "\n")
 		log_file.flush()
 
-		postfix = {
-			"acc": f"{acc_:.2f}",
-			"loss": f"{loss_:.3f}",
-			"class": f"{loss_class_:.3f}",
-			"volume": f"{loss_volume_:.3f}",
-		}
-		bar.set_postfix(**postfix)
+		bar.set_postfix(
+			acc=f"{acc_:.2f}",
+			los=f"{loss_:.3f}",
+			cls=f"{loss_class_:.3f}",
+			vol=f"{loss_volume_:.3f}",
+			rat=f"{ratio_:.2f}",
+		)
 		bar.update(1)
 
 		if (step + 1) % (step_num // 10) == 0 or (step + 1) == step_num:

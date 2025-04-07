@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import Tuple
 
-import math
 import torch
 from torch import nn, Tensor
 from torch.nn import functional as fn
@@ -57,7 +56,7 @@ class Model(nn.Module):
 	):
 		super(Model, self).__init__()
 		self.t5 = T5ForConditionalGeneration.from_pretrained(name)
-		self.gate = Gate(bias, temperature)
+		self.gates = nn.ModuleList(Gate(bias, temperature) for _ in self.t5.encoder.block)
 
 	def encode(
 		self,
@@ -68,7 +67,6 @@ class Model(nn.Module):
 		device = tokens.device
 		batch_size = tokens.size(0)
 		input_length = tokens.size(1)
-		model_dim = self.t5.model_dim
 
 		if attn_mask is None:
 			mask_size = (batch_size, input_length, input_length)
@@ -81,9 +79,9 @@ class Model(nn.Module):
 		# Adding dimension per attention head for HF compatibility
 		attn_mask = attn_mask.unsqueeze(1)
 		gate_mask = torch.zeros(input_length, device=device)
-
-		diag_indices = torch.arange(input_length, device=device)
-		volume = torch.zeros((batch_size, len(self.t5.encoder.block) // 2), device=device)
+		diag_mask = 1 - torch.eye(input_length, device=device)
+		diag_mask = diag_mask * pad_mask.unsqueeze(2)
+		volume = torch.zeros((batch_size, len(self.t5.encoder.block)), device=device)
 
 		# Kinda strange variable with cache disabled,
 		# but it's used to calculate the position bias
@@ -95,31 +93,37 @@ class Model(nn.Module):
 		all_attn = []
 		all_gates = []
 
-		for i, encoder_layer in enumerate(self.t5.encoder.block):
+
+		heads_num = self.t5.config.num_heads
+		input_volume = pad_mask.sum(dim=1) * heads_num
+
+		for i, (encoder_layer, gate_layer) in enumerate(zip(self.t5.encoder.block, self.gates)):
 			embeds[:, :, 0] = 0.0
 			embeds, attn_mask, attn_scores = encoder_layer(
 				hidden_states=embeds,
 				cache_position=cache_position,
 				attention_mask=attn_mask,
 				position_bias=attn_mask if i > 0 else None,
+				output_attentions=True,
 				# position_bias=None,
 				output_attentions=True,
 			)
 
-			if i % 2 == 0:
-				continue
+			gate = gate_layer(embeds=embeds)
+			gate_mask = gate_mask + gate
 
-			gates = self.gate(embeds=embeds)
 			all_gates.append(gates.squeeze(0))
 			all_attn.append(attn_scores.squeeze(0))
-			gate_mask = gate_mask + gates
-			volume[:, i // 2] = ((gate_mask / math.sqrt(model_dim)).exp() * pad_mask).sum(dim=1)
 
-			gates = gates.unsqueeze(1) + gates.unsqueeze(2)
-			gates[:, diag_indices, diag_indices] = 0.0
-			attn_mask = attn_mask + gates.unsqueeze(1)
+			ratios = attn_scores.sum(dim=1)
+			ratios = ratios * diag_mask
+			ratios = ratios.sum(dim=(1, 2))
+			ratios = ratios / input_volume
+			volume[:, i] = ratios
 
-			embeds[:, :, 0] = 0.0
+			gate = gate.unsqueeze(1) + gate.unsqueeze(2)
+			gate = gate * diag_mask
+			attn_mask = attn_mask + gate.unsqueeze(1)
 
 		embeds = self.t5.encoder.final_layer_norm(embeds)
 		embeds = self.t5.encoder.dropout(embeds)
