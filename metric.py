@@ -1,7 +1,6 @@
 from operator import sub, add
-from typing import Tuple
+from typing import Tuple, List, Sequence
 from torch import Tensor
-
 from config import Config
 
 
@@ -11,7 +10,46 @@ class RollingMean:
 		self.values = []
 		self.sums = None
 
-	def __call__(self, *values: float) -> Tuple[float, ...]:
+	F = float | Sequence[float]
+
+	@staticmethod
+	def flatten(values: Tuple[F, ...]) -> List[float]:
+		flat = []
+
+		for v in values:
+			if isinstance(v, float):
+				flat.append(v)
+			elif isinstance(v, Sequence):
+				flat.extend(v)
+			else:
+				raise ValueError(f"Unsupported type {type(v)}")
+
+		return flat
+
+	@staticmethod
+	def unflatten(original: Tuple[F, ...], flat: Sequence[float]) -> Tuple[F, ...]:
+		i, values = 0, []
+
+		for v in original:
+			if isinstance(v, float):
+				values.append(flat[i])
+				i += 1
+			elif isinstance(v, Sequence):
+				j = i + len(v)
+				values.append(tuple(flat[i:j]))
+				i = j
+
+		if len(values) > 1:
+			values = tuple(values)
+		else:
+			values = values[0]
+
+		return values
+
+	def __call__(self, *values: F) -> Tuple[F, ...]:
+		original = values
+
+		values = self.flatten(values)
 		self.values.append(values)
 
 		if self.sums is None:
@@ -25,6 +63,7 @@ class RollingMean:
 
 		n = len(self.values)
 		mean = tuple(s / n for s in self.sums)
+		mean = self.unflatten(original, mean)
 
 		return mean
 

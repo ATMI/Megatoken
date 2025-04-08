@@ -1,3 +1,4 @@
+import sys
 from dataclasses import dataclass
 from typing import Tuple
 
@@ -79,7 +80,6 @@ class Model(nn.Module):
 			mask = torch.where(pad_mask, 0, -torch.inf)
 			attn_mask = attn_mask + mask.unsqueeze(1)
 
-
 		# Adding dimension per attention head for HF compatibility
 		attn_mask = attn_mask.unsqueeze(1)
 		gate_mask = torch.zeros(input_length, device=device)
@@ -100,9 +100,27 @@ class Model(nn.Module):
 
 		heads_num = self.t5.config.num_heads
 		input_volume = pad_mask.sum(dim=1) * heads_num
-		indices = torch.arange(input_length, device=device)
+		input_indices = torch.arange(input_length, device=device)
+
+		scores = None
+		tracer = None
+
+		def trace(frame, event, _):
+			if frame.f_lineno != 522 or event != "line":
+				return trace
+
+			nonlocal scores
+			scores = frame.f_locals.get("scores")
+			if scores is None:
+				return trace
+			scores = scores.clone()
+			return None
 
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
+			if i % 2 == 1:
+				tracer = sys.gettrace()
+				sys.settrace(trace)
+
 			embeds[:, :, 0] = 0.0
 			embeds, attn_mask, attn_scores = encoder_layer(
 				hidden_states=embeds,
@@ -111,29 +129,29 @@ class Model(nn.Module):
 				position_bias=attn_mask if i > 0 else None,
 				output_attentions=True,
 				# position_bias=None,
-				output_attentions=True,
 			)
 
+			j = i // 2
 			if i % 2 == 0:
-				continue
+				gate_layer = self.gates[j]
+				gate = gate_layer(embeds=embeds)
+				gate_mask = gate_mask + gate
 
-			i = i // 2
-			gate_layer = self.gates[i]
-			gate = gate_layer(embeds=embeds)
-			gate_mask = gate_mask + gate
+				all_gates.append(gate.squeeze(0))
+				all_attn.append(attn_scores.squeeze(0))
 
-			all_gates.append(gates.squeeze(0))
-			all_attn.append(attn_scores.squeeze(0))
-
-			ratios = attn_scores.sum(dim=1)
-			ratios = ratios * diag_mask
-			ratios = ratios.sum(dim=(1, 2))
-			ratios = ratios / input_volume
-			volume[:, i] = ratios
-
-			gate = gate.unsqueeze(1) + gate.unsqueeze(2)
-			attn_mask = attn_mask + gate.unsqueeze(1)
-			attn_mask[:, :, indices, indices] = 0.0
+				gate = gate.unsqueeze(1) + gate.unsqueeze(2)
+				attn_mask = attn_mask + gate.unsqueeze(1)
+				attn_mask[:, :, input_indices, input_indices] = 0.0
+			else:
+				sys.settrace(tracer)
+				scores = scores.detach() + attn_mask
+				scores = scores.softmax(dim=3)
+				scores = scores.sum(dim=1)
+				scores = scores * diag_mask
+				scores = scores.sum(dim=(1, 2))
+				scores = scores / input_volume
+				volume[:, j] = scores
 
 		embeds = self.t5.encoder.final_layer_norm(embeds)
 		embeds = self.t5.encoder.dropout(embeds)
