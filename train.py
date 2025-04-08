@@ -69,39 +69,41 @@ def main():
 			input_attn_mask=batch.decoder_mask,
 		)
 
-		loss_volume = result.volume[:, -1].mean()
-		loss_class = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
+		loss_vol = result.volume.mean()
+		loss_cls = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
 
 		if step > 1000:
-			loss = loss_class + 3 * loss_volume
+			loss = loss_cls + 3 * loss_vol
 		else:
-			loss = loss_class
+			loss = loss_cls
 
 		loss.backward()
 		optimizer.step()
 		torch.cuda.empty_cache()
 
 		acc = accuracy(result.logits, batch.labels) * 100
-		loss_volume = loss_volume.item()
-		loss_class = loss_class.item()
+		ratio = result.volume.mean(dim=0).tolist()
+		loss_vol = loss_vol.item()
+		loss_cls = loss_cls.item()
 		loss = loss.item()
 
-		acc_, loss_, loss_volume_, loss_class_ = rolling(acc, loss, loss_volume, loss_class)
-
 		log = {
-			"acc": acc, "acc~": acc_,
-			"los": loss, "los~": loss_,
-			"cls": loss_class, "cls~": loss_class_,
-			"vol": loss_volume, "vol~": loss_volume_,
+			"acc": acc,
+			"los": loss,
+			"cls": loss_cls,
+			"vol": loss_vol,
+			"rat": ratio,
 		}
 		log_file.write(json.dumps(log) + "\n")
 		log_file.flush()
 
+		acc, ratio, loss, loss_vol, loss_cls = rolling(acc, ratio, loss, loss_vol, loss_cls)
 		bar.set_postfix(
-			acc=f"{acc_:.2f}",
-			los=f"{loss_:.3f}",
-			cls=f"{loss_class_:.3f}",
-			vol=f"{loss_volume_:.3f}",
+			acc=f"{acc:.2f}",
+			los=f"{loss:.3f}",
+			cls=f"{loss_cls:.3f}",
+			vol=f"{loss_vol:.3f}",
+			rat=f"{ratio[-1]:.3f}",
 		)
 		bar.update(1)
 
