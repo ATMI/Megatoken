@@ -10,9 +10,51 @@ import torch
 import numpy as np
 import warnings
 from sklearn.exceptions import ConvergenceWarning
+import seaborn as sns
 
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 torch.set_grad_enabled(False)
+INIT_TOKENS = 1
+
+def plot_seaborn(sentence, influence, key_words, skip_tokens=0, save_path=None):
+    assert influence.shape == (len(key_words), len(sentence) - skip_tokens), \
+        f"Influence shape must be ({len(key_words)}, {len(sentence) - skip_tokens})"
+
+    n_total = len(sentence)
+    k = len(key_words)
+
+    full_influence = np.full((k, n_total), np.nan)
+    full_influence[:, skip_tokens:] = influence
+
+    fig_width = max(8, 0.7 * n_total)
+    fig_height = max(2.5, 0.6 * k)
+
+    plt.figure(figsize=(fig_width, fig_height))
+    ax = sns.heatmap(
+        full_influence,
+        annot=[[f"{val:.2f}" if not np.isnan(val) else "" for val in row] for row in full_influence],
+        xticklabels=sentence,
+        yticklabels=key_words,
+        cmap="RdBu",
+        center=0,
+        linewidths=0.5,
+        cbar_kws={'label': 'Influence Score'},
+        fmt=""
+    )
+
+    for x in range(skip_tokens):
+        ax.add_patch(plt.Rectangle((x, -0.5), 1, k, fill=True, color='lightgray', alpha=0.3, lw=0))
+
+    plt.title("Influence of Key Words on Sentence Tokens")
+    plt.xlabel("Decoded Sentence")
+    plt.ylabel("Key Words")
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
+    else:
+        plt.show()
+
 
 
 def plot(results):
@@ -57,10 +99,12 @@ class SHAPexplainer():
         self.input_ids = memory_ids[:, :1]
 
         tokens = self.generate_tokens(steps, memory_ids)
+        decoded_tokens = [self.tokenizer.decode([token], skip_special_tokens=False) for token in tokens[0]]
         print(tokens)
-        print(self.tokenizer.decode(tokens.squeeze(0).tolist(), skip_special_tokens=False))
+        print(decoded_tokens)
+
         values_array = []
-        for i in range(1, steps):
+        for i in range(INIT_TOKENS, steps+1):
             self.input_ids = tokens[:, :i]
             self.correct_token_id = tokens[:, i]
             data, total_inds = self.prepare_data()
@@ -72,7 +116,10 @@ class SHAPexplainer():
             )
             values_array.append([shap_values, self.tokenizer.decode(self.correct_token_id)])
 
-        return values_array
+        decoded_memory = [self.tokenizer.decode([token], skip_special_tokens=False) for token in memory_ids[self.memory.gate_mask==0]]
+
+
+        return values_array, decoded_tokens, decoded_memory
 
     def generate_tokens(self, num_steps, memory_ids):
         tokens = self.input_ids.clone()
@@ -152,7 +199,10 @@ class SHAPexplainer():
 if __name__ == "__main__":
     start_sent = "This cafe is a hidden gem! The cozy atmosphere and excellent coffee make it the perfect spot to relax and unwind. The staff are friendly and attentive, always ensuring that your cup is full."
     shaper = SHAPexplainer()
-    results = shaper.shap_eval(start_sent, 25)
+    steps = 25
+    results, decoded_sent, token_ids = shaper.shap_eval(start_sent, steps)
+    raw_results = [results[i][0] for i in range(len(results))]
+    accumulated_results = np.squeeze(np.concatenate(raw_results,axis = 2),axis = 0)
 
-    for i in range(len(results)):
-        plot(results[i])
+    plot_seaborn(decoded_sent, accumulated_results, token_ids, skip_tokens=INIT_TOKENS)
+
