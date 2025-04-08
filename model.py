@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 from typing import Tuple
 
@@ -90,37 +91,41 @@ class Model(nn.Module):
 		embeds = self.t5.encoder.embed_tokens(tokens)
 		embeds = self.t5.encoder.dropout(embeds)
 
+		model_dim = self.t5.model_dim
 		heads_num = self.t5.config.num_heads
-		input_volume = pad_mask.sum(dim=1) * heads_num
-		indices = torch.arange(input_length, device=device)
+		mask_norm = math.sqrt(model_dim / heads_num)
+
+		input_lengths = pad_mask.sum(dim=1)
+		input_indices = torch.arange(input_length, device=device)
 
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
-			j = i // 2
-
 			embeds[:, :, 0] = 0.0
-			embeds, attn_mask, attn_scores = encoder_layer(
+			embeds, attn_mask = encoder_layer(
 				hidden_states=embeds,
 				cache_position=cache_position,
 				attention_mask=attn_mask,
 				position_bias=attn_mask if i > 0 else None,
-				output_attentions=True,
+				output_attentions=False,
 				# position_bias=None,
 			)
 
-			if i % 2 == 0:
-				gate_layer = self.gates[j]
-				gate = gate_layer(embeds=embeds)
-				gate_mask = gate_mask + gate
+			if i % 2 != 0:
+				continue
 
-				gate = gate.unsqueeze(1) + gate.unsqueeze(2)
-				attn_mask = attn_mask + gate.unsqueeze(1)
-				attn_mask[:, :, indices, indices] = 0.0
-			else:
-				ratios = attn_scores.sum(dim=1)
-				ratios = ratios * diag_mask
-				ratios = ratios.sum(dim=(1, 2))
-				ratios = ratios / input_volume
-				volume[:, j] = ratios
+			j = i // 2
+			gate_layer = self.gates[j]
+			gate = gate_layer(embeds=embeds)
+			gate_mask = gate_mask + gate
+
+			gate = gate.unsqueeze(1) + gate.unsqueeze(2)
+			attn_mask = attn_mask + gate.unsqueeze(1)
+			attn_mask[:, :, input_indices, input_indices] = 0.0
+
+			ratios = (gate_mask / mask_norm).exp()
+			ratios = ratios * pad_mask
+			ratios = ratios.sum(dim=1)
+			ratios = ratios / input_lengths
+			volume[:, j] = ratios
 
 		embeds = self.t5.encoder.final_layer_norm(embeds)
 		embeds = self.t5.encoder.dropout(embeds)

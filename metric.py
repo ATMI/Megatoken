@@ -39,7 +39,12 @@ class RollingMean:
 				values.append(tuple(flat[i:j]))
 				i = j
 
-		return tuple(values)
+		if len(values) > 1:
+			values = tuple(values)
+		else:
+			values = values[0]
+
+		return values
 
 	def __call__(self, *values: F) -> Tuple[F, ...]:
 		original = values
