@@ -76,7 +76,6 @@ class Model(nn.Module):
 			mask = torch.where(pad_mask, 0, -torch.inf)
 			attn_mask = attn_mask + mask.unsqueeze(1)
 
-
 		# Adding dimension per attention head for HF compatibility
 		attn_mask = attn_mask.unsqueeze(1)
 		gate_mask = torch.zeros(input_length, device=device)
@@ -96,6 +95,8 @@ class Model(nn.Module):
 		indices = torch.arange(input_length, device=device)
 
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
+			j = i // 2
+
 			embeds[:, :, 0] = 0.0
 			embeds, attn_mask, attn_scores = encoder_layer(
 				hidden_states=embeds,
@@ -107,22 +108,19 @@ class Model(nn.Module):
 			)
 
 			if i % 2 == 0:
-				continue
+				gate_layer = self.gates[j]
+				gate = gate_layer(embeds=embeds)
+				gate_mask = gate_mask + gate
 
-			i = i // 2
-			gate_layer = self.gates[i]
-			gate = gate_layer(embeds=embeds)
-			gate_mask = gate_mask + gate
-
-			ratios = attn_scores.sum(dim=1)
-			ratios = ratios * diag_mask
-			ratios = ratios.sum(dim=(1, 2))
-			ratios = ratios / input_volume
-			volume[:, i] = ratios
-
-			gate = gate.unsqueeze(1) + gate.unsqueeze(2)
-			attn_mask = attn_mask + gate.unsqueeze(1)
-			attn_mask[:, :, indices, indices] = 0.0
+				gate = gate.unsqueeze(1) + gate.unsqueeze(2)
+				attn_mask = attn_mask + gate.unsqueeze(1)
+				attn_mask[:, :, indices, indices] = 0.0
+			else:
+				ratios = attn_scores.sum(dim=1)
+				ratios = ratios * diag_mask
+				ratios = ratios.sum(dim=(1, 2))
+				ratios = ratios / input_volume
+				volume[:, j] = ratios
 
 		embeds = self.t5.encoder.final_layer_norm(embeds)
 		embeds = self.t5.encoder.dropout(embeds)
