@@ -25,7 +25,7 @@ def main():
 	model = model.to(device)
 	optimizer = optim.Adam(model.parameters(), Config.lr)
 
-	# init = torch.load("checkpoint/64f160e780f1bd4bc7b9ff6a0ec60c8c20b02a55/32499.pth", map_location=device, weights_only=True)
+	# init = torch.load("checkpoint.pth", map_location=device, weights_only=True)
 	# model.load_state_dict(init["model"])
 	# optimizer.load_state_dict(init["optimizer"])
 
@@ -69,7 +69,7 @@ def main():
 			input_attn_mask=batch.decoder_mask,
 		)
 
-		loss_volume = result.volume.mean()
+		loss_volume = result.volume[:, -1].mean()
 		loss_class = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
 
 		if step > 1000:
@@ -82,19 +82,17 @@ def main():
 		torch.cuda.empty_cache()
 
 		acc = accuracy(result.logits, batch.labels) * 100
-		ratio = result.volume[:, -1].mean().item() * 100
 		loss_volume = loss_volume.item()
 		loss_class = loss_class.item()
 		loss = loss.item()
 
-		acc_, ratio_, loss_, loss_volume_, loss_class_ = rolling(acc, ratio, loss, loss_volume, loss_class)
+		acc_, loss_, loss_volume_, loss_class_ = rolling(acc, loss, loss_volume, loss_class)
 
 		log = {
 			"acc": acc, "acc~": acc_,
 			"los": loss, "los~": loss_,
 			"cls": loss_class, "cls~": loss_class_,
 			"vol": loss_volume, "vol~": loss_volume_,
-			"rat": ratio, "rat~": ratio_,
 		}
 		log_file.write(json.dumps(log) + "\n")
 		log_file.flush()
@@ -104,7 +102,6 @@ def main():
 			los=f"{loss_:.3f}",
 			cls=f"{loss_class_:.3f}",
 			vol=f"{loss_volume_:.3f}",
-			rat=f"{ratio_:.2f}",
 		)
 		bar.update(1)
 

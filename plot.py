@@ -1,8 +1,9 @@
 import json
-import math
+from metric import RollingMean
 from collections import defaultdict
 from typing import Tuple
 
+import numpy as np
 import matplotlib.pyplot as plt
 
 
@@ -25,6 +26,9 @@ def dual_plot(
 
 	y_color: str,
 	z_color: str,
+
+	y_ticks = None,
+	z_ticks = None,
 
 	y_loc: str = "lower left",
 	z_loc: str = "upper right",
@@ -52,38 +56,51 @@ def dual_plot(
 
 	if y_lim is not None:
 		ax1.set_ylim(*y_lim)
+	if y_ticks is not None:
+		ax1.set_yticks(y_ticks)
 
 	if z_lim is not None:
 		ax2.set_ylim(*z_lim)
+	if z_ticks is not None:
+		ax2.set_yticks(z_ticks)
 
 	if x_lim is not None:
 		ax1.set_xlim(*x_lim)
 		ax2.set_xlim(*x_lim)
 
+	plt.grid(True)
 	plt.show()
 
 
 def main():
-	# data = load("log/65ce082a56d48fc41c065e382e3513e4c5917dcf.json")
 	data = load("log.json")
+	# data = load("log/f8b654b3502b128ee81d05ab989266b9c1456cdb.json")
 
 	# Volume and accuracy
+	# acc, volume = data["acc"], data["volume"]
+	mean = RollingMean(100)
+	acc, entropy = tuple(zip(*(mean(*x) for x in zip(data["acc"], data["vol"]))))
+
 	dual_plot(
 		x=data["step"],
-		x_lim=(0, 30000),
+		x_lim=(0, 32500),
 
-		y=data["acc~"],
+		y=acc,
 		y_label="accuracy",
 		y_color="green",
 		y_loc="lower left",
 		y_lim=(0, 100),
+		y_ticks=np.arange(0, 110, 10),
 
-		# z=[math.sqrt(v) for v in data["volume~"]],
-		z=data["volume~"],
+		# z=data["volume~"],
+		z=entropy,
 		z_label="volume",
 		z_color="red",
 		z_loc="lower right",
-		z_lim=(0, 1),
+		z_lim=(0, 1.0),
+		z_ticks=np.arange(0, 1.1, 0.1),
+		# z_lim=(0, 1),
+		# z_ticks=np.arange(0, 1.1, 0.1),
 	)
 
 
