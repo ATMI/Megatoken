@@ -25,7 +25,7 @@ def main():
 	model = model.to(device)
 	optimizer = optim.Adam(model.parameters(), Config.lr)
 
-	# init = torch.load("checkpoint.pth", map_location=device, weights_only=True)
+	# init = torch.load("9749.pth", map_location=device, weights_only=True)
 	# model.load_state_dict(init["model"])
 	# optimizer.load_state_dict(init["optimizer"])
 
@@ -61,6 +61,7 @@ def main():
 		batch = batch.to(device)
 		result = model.forward(
 			memory_tokens=batch.inputs,
+			memory_eos_mask=batch.eos_mask,
 			memory_pad_mask=batch.pad_mask,
 			memory_attn_mask=None,
 

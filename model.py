@@ -62,6 +62,7 @@ class Model(nn.Module):
 	def encode(
 		self,
 		tokens: Tensor,
+		eos_mask: Tensor,
 		pad_mask: Tensor | None,
 		attn_mask: Tensor | None,
 	) -> Memory:
@@ -93,7 +94,7 @@ class Model(nn.Module):
 		input_indices = torch.arange(input_length, device=device)
 
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
-			if i % 2 == 0:
+			if i % 2 != 0:
 				embeds[:, :, 0] = 0.0
 
 			embeds, attn_mask = encoder_layer(
@@ -104,11 +105,12 @@ class Model(nn.Module):
 				output_attentions=False,
 			)
 
-			if i % 2 == 0:
+			if i % 2 != 0:
 				i //= 2
 
 				gate_layer = self.gates[i]
 				gate = gate_layer(embeds=embeds)
+				gate[eos_mask[0], eos_mask[1]] = 0.0
 				gate_mask = gate_mask + gate
 
 				gate = gate.unsqueeze(1) + gate.unsqueeze(2)
@@ -134,6 +136,7 @@ class Model(nn.Module):
 		self,
 		memory: Memory,
 		tokens: Tensor,
+		eos_mask: Tensor,
 		pad_mask: Tensor | None,
 		attn_mask: Tensor | None,
 	):
@@ -153,10 +156,11 @@ class Model(nn.Module):
 			attn_mask = attn_mask + mask.unsqueeze(1)
 
 		self_attn_mask = attn_mask.unsqueeze(1)
+		self_attn_mask[eos_mask[0], :, :, eos_mask[1]] = 0.0
+
 		cross_attn_mask = torch.where(memory.pad_mask, 0, -torch.inf)
 		cross_attn_mask = cross_attn_mask + memory.gate_mask
 		cross_attn_mask = cross_attn_mask[:, None, None, :]
-		# cross_attn_mask = cross_attn_mask.repeat(1, 1, input_length, 1)
 
 		cache_position = torch.arange(input_length, device=device)
 		input_embeds = self.t5.decoder.embed_tokens(tokens)
@@ -196,17 +200,18 @@ class Model(nn.Module):
 	def forward(
 		self,
 		memory_tokens: Tensor,
-		input_tokens: Tensor,
-
+		memory_eos_mask: Tensor,
 		memory_pad_mask: Tensor | None,
-		input_pad_mask: Tensor | None,
+		memory_attn_mask: Tensor | None,
 
-		memory_attn_mask: Tensor | None = None,
-		input_attn_mask: Tensor | None = None,
+		input_tokens: Tensor,
+		input_pad_mask: Tensor | None,
+		input_attn_mask: Tensor | None,
 	) -> "Outputs":
 		# Encode
 		memory = self.encode(
 			tokens=memory_tokens,
+			eos_mask=memory_eos_mask,
 			pad_mask=memory_pad_mask,
 			attn_mask=memory_attn_mask,
 		)
@@ -215,6 +220,7 @@ class Model(nn.Module):
 		logits = self.decode(
 			memory=memory,
 			tokens=input_tokens,
+			eos_mask=memory_eos_mask,
 			pad_mask=input_pad_mask,
 			attn_mask=input_attn_mask,
 		)
