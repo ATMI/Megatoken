@@ -25,6 +25,7 @@ def load(path: str) -> Tuple[int, Dict[str, List[float]]]:
 def main():
 	start = time()
 	x, data = load("log.json")
+	# x, data = load("log/a4d2a56656e1a1e4233a3d830cc0617205f467ed.json")
 	stop = time()
 	print(stop - start)
 

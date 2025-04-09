@@ -94,7 +94,7 @@ class Model(nn.Module):
 		input_indices = torch.arange(input_length, device=device)
 
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
-			if i % 2 != 0:
+			if i % 2 == 0:
 				embeds[:, :, 0] = 0.0
 
 			embeds, attn_mask = encoder_layer(
@@ -105,7 +105,7 @@ class Model(nn.Module):
 				output_attentions=False,
 			)
 
-			if i % 2 != 0:
+			if i % 2 == 0:
 				i //= 2
 
 				gate_layer = self.gates[i]
