@@ -1,4 +1,4 @@
-import sys
+import math
 from dataclasses import dataclass
 from typing import Tuple
 
@@ -65,9 +65,12 @@ class Model(nn.Module):
 	def encode(
 		self,
 		tokens: Tensor,
+		eos_mask: Tensor,
 		pad_mask: Tensor | None,
 		attn_mask: Tensor | None,
 	) -> Memory:
+		kv_dim = self.t5.config.d_kv
+
 		device = tokens.device
 		batch_size = tokens.size(0)
 		input_length = tokens.size(1)
@@ -83,9 +86,7 @@ class Model(nn.Module):
 		# Adding dimension per attention head for HF compatibility
 		attn_mask = attn_mask.unsqueeze(1)
 		gate_mask = torch.zeros(input_length, device=device)
-		diag_mask = 1 - torch.eye(input_length, device=device)
-		diag_mask = diag_mask * pad_mask.unsqueeze(2)
-		volume = torch.zeros((batch_size, len(self.gates)), device=device)
+		volumes = torch.zeros((batch_size, len(self.gates)), device=device)
 
 		# Kinda strange variable with cache disabled,
 		# but it's used to calculate the position bias
@@ -93,35 +94,15 @@ class Model(nn.Module):
 		cache_position = torch.arange(input_length, device=device)
 		embeds = self.t5.encoder.embed_tokens(tokens)
 		embeds = self.t5.encoder.dropout(embeds)
+		input_indices = torch.arange(input_length, device=device)
 
 		all_attn = []
 		all_gates = []
 
-
-		heads_num = self.t5.config.num_heads
-		input_volume = pad_mask.sum(dim=1) * heads_num
-		input_indices = torch.arange(input_length, device=device)
-
-		scores = None
-		tracer = None
-
-		def trace(frame, event, _):
-			if frame.f_lineno != 529 or event != "line":
-				return trace
-
-			nonlocal scores
-			scores = frame.f_locals.get("scores")
-			if scores is None:
-				return trace
-			scores = scores.clone()
-			return None
-
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
-			if i % 2 == 1:
-				tracer = sys.gettrace()
-				sys.settrace(trace)
+			if i % 2 == 0:
+				embeds[:, :, 0] = 0.0
 
-			embeds[:, :, 0] = 0.0
 			embeds, attn_mask, attn_scores = encoder_layer(
 				hidden_states=embeds,
 				cache_position=cache_position,
@@ -131,10 +112,12 @@ class Model(nn.Module):
 				# position_bias=None,
 			)
 
-			j = i // 2
 			if i % 2 == 0:
-				gate_layer = self.gates[j]
+				i //= 2
+
+				gate_layer = self.gates[i]
 				gate = gate_layer(embeds=embeds)
+				gate[eos_mask[0], eos_mask[1]] = 0.0
 				gate_mask = gate_mask + gate
 
 				all_gates.append(gate.squeeze(0))
@@ -143,15 +126,10 @@ class Model(nn.Module):
 				gate = gate.unsqueeze(1) + gate.unsqueeze(2)
 				attn_mask = attn_mask + gate.unsqueeze(1)
 				attn_mask[:, :, input_indices, input_indices] = 0.0
-			else:
-				sys.settrace(tracer)
-				scores = scores.detach() + attn_mask
-				scores = scores.softmax(dim=3)
-				scores = scores.sum(dim=1)
-				scores = scores * diag_mask
-				scores = scores.sum(dim=(1, 2))
-				scores = scores / input_volume
-				volume[:, j] = scores
+
+				volume = (gate_mask / math.sqrt(kv_dim)).exp()
+				volume = (volume * pad_mask).sum(dim=1)
+				volumes[:, i] = volume
 
 		embeds = self.t5.encoder.final_layer_norm(embeds)
 		embeds = self.t5.encoder.dropout(embeds)
@@ -161,7 +139,7 @@ class Model(nn.Module):
 			gate_mask=gate_mask,
 
 			embeds=embeds,
-			volume=volume,
+			volume=volumes,
 			attn_scores=torch.stack(all_attn),
 			gates=torch.stack(all_gates),
 		)
@@ -170,6 +148,7 @@ class Model(nn.Module):
 		self,
 		memory: Memory,
 		tokens: Tensor,
+		eos_mask: Tensor,
 		pad_mask: Tensor | None,
 		attn_mask: Tensor | None,
 	):
@@ -189,10 +168,11 @@ class Model(nn.Module):
 			attn_mask = attn_mask + mask.unsqueeze(1)
 
 		self_attn_mask = attn_mask.unsqueeze(1)
+		self_attn_mask[eos_mask[0], :, :, eos_mask[1]] = 0.0
+
 		cross_attn_mask = torch.where(memory.pad_mask, 0, -torch.inf)
 		cross_attn_mask = cross_attn_mask + memory.gate_mask
 		cross_attn_mask = cross_attn_mask[:, None, None, :]
-		# cross_attn_mask = cross_attn_mask.repeat(1, 1, input_length, 1)
 
 		cache_position = torch.arange(input_length, device=device)
 		input_embeds = self.t5.decoder.embed_tokens(tokens)
@@ -232,17 +212,18 @@ class Model(nn.Module):
 	def forward(
 		self,
 		memory_tokens: Tensor,
-		input_tokens: Tensor,
-
+		memory_eos_mask: Tensor,
 		memory_pad_mask: Tensor | None,
-		input_pad_mask: Tensor | None,
+		memory_attn_mask: Tensor | None,
 
-		memory_attn_mask: Tensor | None = None,
-		input_attn_mask: Tensor | None = None,
+		input_tokens: Tensor,
+		input_pad_mask: Tensor | None,
+		input_attn_mask: Tensor | None,
 	) -> "Outputs":
 		# Encode
 		memory = self.encode(
 			tokens=memory_tokens,
+			eos_mask=memory_eos_mask,
 			pad_mask=memory_pad_mask,
 			attn_mask=memory_attn_mask,
 		)
@@ -251,6 +232,7 @@ class Model(nn.Module):
 		logits = self.decode(
 			memory=memory,
 			tokens=input_tokens,
+			eos_mask=memory_eos_mask,
 			pad_mask=input_pad_mask,
 			attn_mask=input_attn_mask,
 		)

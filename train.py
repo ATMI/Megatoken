@@ -25,7 +25,7 @@ def main():
 	model = model.to(device)
 	optimizer = optim.Adam(model.parameters(), Config.lr)
 
-	# init = torch.load("checkpoint.pth", map_location=device, weights_only=True)
+	# init = torch.load("9749.pth", map_location=device, weights_only=True)
 	# model.load_state_dict(init["model"])
 	# optimizer.load_state_dict(init["optimizer"])
 
@@ -61,6 +61,7 @@ def main():
 		batch = batch.to(device)
 		result = model.forward(
 			memory_tokens=batch.inputs,
+			memory_eos_mask=batch.eos_mask,
 			memory_pad_mask=batch.pad_mask,
 			memory_attn_mask=None,
 
@@ -69,20 +70,27 @@ def main():
 			input_attn_mask=batch.decoder_mask,
 		)
 
-		loss_vol = result.volume.mean()
+		input_lengths = batch.pad_mask.sum(dim=1, keepdim=True)
+		input_lengths = torch.cat((input_lengths, result.volume[:, :-1]), dim=1)
+
+		ratios = result.volume / input_lengths
+		input_lengths = input_lengths[:, 0]
+
+		loss_vol = ratios.mean()
 		loss_cls = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
 
-		if step > 1000:
+		if step > Config.warmup:
 			loss = loss_cls + 3 * loss_vol
 		else:
 			loss = loss_cls
 
 		loss.backward()
 		optimizer.step()
-		torch.cuda.empty_cache()
+		# torch.cuda.empty_cache()
 
 		acc = accuracy(result.logits, batch.labels) * 100
-		ratio = result.volume.mean(dim=0).tolist()
+		comp = (result.volume[:, -1] / input_lengths).mean().item()
+		ratios = ratios.mean(dim=0).tolist()
 		loss_vol = loss_vol.item()
 		loss_cls = loss_cls.item()
 		loss = loss.item()
@@ -92,18 +100,19 @@ def main():
 			"los": loss,
 			"cls": loss_cls,
 			"vol": loss_vol,
-			"rat": ratio,
+			"rat": ratios,
+			"comp": comp,
 		}
 		log_file.write(json.dumps(log) + "\n")
 		log_file.flush()
 
-		acc, ratio, loss, loss_vol, loss_cls = rolling(acc, ratio, loss, loss_vol, loss_cls)
+		acc, comp, ratios, loss, loss_vol, loss_cls = rolling(acc, comp, ratios, loss, loss_vol, loss_cls)
 		bar.set_postfix(
 			acc=f"{acc:.2f}",
+			comp=f"{comp:.3f}",
 			los=f"{loss:.3f}",
 			cls=f"{loss_cls:.3f}",
 			vol=f"{loss_vol:.3f}",
-			rat=f"{ratio[-1]:.3f}",
 		)
 		bar.update(1)
 

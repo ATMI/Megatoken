@@ -25,6 +25,7 @@ def load(path: str) -> Tuple[int, Dict[str, List[float]]]:
 def main():
 	start = time()
 	x, data = load("log.json")
+	# x, data = load("log/a4d2a56656e1a1e4233a3d830cc0617205f467ed.json")
 	stop = time()
 	print(stop - start)
 
@@ -35,6 +36,7 @@ def main():
 
 	x = np.arange(x)
 	acc = rolling(data["acc"])
+	comp = rolling(data["comp"])
 	ratio = rolling(data["rat"])
 	ratio = tuple(zip(*ratio))
 
@@ -51,7 +53,7 @@ def main():
 	ax2.set_ylim(0, 1)
 	ax2.set_yticks(np.arange(0, 1.1, 0.1))
 
-	ratio = list(zip(ratio, "cmyk", ["gate 0", "gate 1", "gate 2", "gate 3"]))
+	ratio = list(zip((*ratio, comp), "cmykr", ["gate 0", "gate 1", "gate 2", "gate 3", "comp"]))
 	for r, color, label in ratio:
 		ax2.plot(
 			x, r,
