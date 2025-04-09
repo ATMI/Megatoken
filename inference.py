@@ -185,8 +185,8 @@ def viz(model, tokenizer, text):
 def main():
     tokenizer = AutoTokenizer.from_pretrained(Config.model)
 
-    text = "Good beer selection. Understaffed for a light Monday night crowd, it wasn't her fault she was the only server. But it took about an hour to get our sandwiches. Mine was one of the best reubens I've ever had."
-    # text = "Very disappointed in the customer service. We ordered Reuben's and wanted coleslaw instead of kraut. They charged us $3.00 for the coleslaw. We will not be back . The iced tea is also terrible tasting."
+    # text = "Good beer selection. Understaffed for a light Monday night crowd, it wasn't her fault she was the only server. But it took about an hour to get our sandwiches. Mine was one of the best reubens I've ever had."
+    text = "Very disappointed in the customer service. We ordered Reuben's and wanted coleslaw instead of kraut. They charged us $3.00 for the coleslaw. We will not be back . The iced tea is also terrible tasting."
     # text = "Very nice restaurant! Will be back. Recommend trying Hawaiian pizza"
     # text = "Great breakfast, good price. You might have to stand outside in line though, so I don't really recommend winter time to go. lol. Very friendly service, interesting coffee mugs. They have great deserts and such also. Bring your cash though as they dont' take cards."
     # text = "Talk about overpriced. $18 for a fairly basic pasta with some obviously frozen chicken chopped up over it. The latter was terrible, thin and flabby and rather unappealing. The pasta itself was ok, as was the sauce. The desserts are pretty good. But honestly, that is a $10 dish whose price has been inflated."
@@ -194,7 +194,7 @@ def main():
     print("Initial text:", text, sep="\n")
 
     model = prepare.model()
-    model = load_ckpt(model, "checkpoint/32499.pth")
+    model = load_ckpt(model, "checkpoint/1.pth")
 
     # viz(model, tokenizer, [text])
     inference(model, tokenizer, text)

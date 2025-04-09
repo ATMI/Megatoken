@@ -106,7 +106,7 @@ class Model(nn.Module):
 		tracer = None
 
 		def trace(frame, event, _):
-			if frame.f_lineno != 522 or event != "line":
+			if frame.f_lineno != 529 or event != "line":
 				return trace
 
 			nonlocal scores
