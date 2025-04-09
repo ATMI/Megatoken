@@ -35,15 +35,24 @@ def dataset():
 	return ds
 
 
+import torch
+import random
+import numpy as np
+
 def dataloaders() -> Tuple[
 	data.DataLoader[Batch],
 	data.DataLoader[Batch]
 ]:
+	seed = 42
+	torch.manual_seed(seed)
+	random.seed(seed)
+	np.random.seed(seed)
+
 	ds = dataset()
 	train_loader = data.DataLoader(
 		dataset=ds["train"],
 		batch_size=Config.batch_size,
-		shuffle=True,
+		shuffle=False,
 		collate_fn=Batch.collate,
 	)
 	test_loader = data.DataLoader(
