@@ -25,7 +25,7 @@ def main():
 	model = model.to(device)
 	optimizer = optim.Adam(model.parameters(), Config.lr)
 
-	# init = torch.load("9749.pth", map_location=device, weights_only=True)
+	# init = torch.load("checkpoint.pth", map_location=device, weights_only=True)
 	# model.load_state_dict(init["model"])
 	# optimizer.load_state_dict(init["optimizer"])
 
@@ -76,7 +76,8 @@ def main():
 		ratios = result.volume / input_lengths
 		input_lengths = input_lengths[:, 0]
 
-		loss_vol = ratios.mean()
+		# loss_vol = ratios.mean()
+		loss_vol = (ratios ** 2).mean()
 		loss_cls = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
 
 		if step > Config.warmup:

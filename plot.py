@@ -57,7 +57,7 @@ def main():
 	for r, color, label in ratio:
 		ax2.plot(
 			x, r,
-			label=label,
+			# label=label,
 			color=color,
 		)
 
@@ -65,7 +65,7 @@ def main():
 	ax2.set_xlim(0, 32500)
 
 	ax1.legend(loc="lower left")
-	ax2.legend(loc="upper right")
+	# ax2.legend(loc="upper right")
 
 	plt.grid(True)
 	plt.show()

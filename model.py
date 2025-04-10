@@ -136,7 +136,6 @@ class Model(nn.Module):
 		self,
 		memory: Memory,
 		tokens: Tensor,
-		eos_mask: Tensor,
 		pad_mask: Tensor | None,
 		attn_mask: Tensor | None,
 	):
@@ -156,8 +155,6 @@ class Model(nn.Module):
 			attn_mask = attn_mask + mask.unsqueeze(1)
 
 		self_attn_mask = attn_mask.unsqueeze(1)
-		self_attn_mask[eos_mask[0], :, :, eos_mask[1]] = 0.0
-
 		cross_attn_mask = torch.where(memory.pad_mask, 0, -torch.inf)
 		cross_attn_mask = cross_attn_mask + memory.gate_mask
 		cross_attn_mask = cross_attn_mask[:, None, None, :]
@@ -220,7 +217,6 @@ class Model(nn.Module):
 		logits = self.decode(
 			memory=memory,
 			tokens=input_tokens,
-			eos_mask=memory_eos_mask,
 			pad_mask=input_pad_mask,
 			attn_mask=input_attn_mask,
 		)
