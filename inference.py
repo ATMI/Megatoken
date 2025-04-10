@@ -1,7 +1,4 @@
-from pathlib import Path
-
 import torch
-from torch import Tensor
 from transformers import AutoTokenizer, T5Tokenizer
 
 import prepare
@@ -78,93 +75,6 @@ def inference(
 	print("")
 	print("Initial text:\n", text, sep="")
 	print("Predicted:\n", output, sep="")
-
-
-def viz(model, tokenizer, text):
-	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	model = model.to(device)
-
-	input_ids = tokenizer(
-		text,
-		padding=False,
-		truncation=True,
-		max_length=Config.max_length,
-		return_attention_mask=False,
-		return_tensors="pt",
-	)["input_ids"].to(device)
-
-	model.eval()
-	with torch.no_grad():
-		memory = model.encode(
-			tokens=input_ids,
-			pad_mask=torch.ones_like(input_ids, dtype=torch.bool).to(device),
-			attn_mask=None
-		)
-
-	attention_maps, gate_values = memory.attn_scores, memory.gates
-
-	removed_token_indices = torch.tensor([], device=device)
-
-	for layer_idx, (layer_attention, layer_gates) in enumerate(zip(attention_maps, gate_values)):
-		print(f"Layer {layer_idx}:")
-
-		# Find eliminated tokens at this layer!
-		eliminated_indices = torch.where(layer_gates == -torch.inf)[0]
-		mm = ~torch.isin(eliminated_indices, removed_token_indices)
-		eliminated_indices = eliminated_indices[mm]
-		if eliminated_indices.numel() == 0:
-			print("No compression in this layer!\n")
-			continue
-
-		# Track eliminated tokens (to display shortened sequence)
-
-		removed_token_indices = torch.cat((removed_token_indices, eliminated_indices))
-
-		# Mean along all Attention Heads
-		attention_matrix = layer_attention.mean(dim=0)
-
-		# Find to where eliminated tokens were merged
-		eliminated_attention = attention_matrix[eliminated_indices]
-		topk_values, topk_indices = torch.topk(eliminated_attention, k=4, dim=1)
-
-		# Convert indices to tokens
-		eliminated_tokens = tokenizer.convert_ids_to_tokens(input_ids[0][eliminated_indices])
-
-		# Print eliminated tokens
-		for token_idx, token in enumerate(eliminated_tokens):
-			print(f"- Eliminated token: '{token}', (position: {eliminated_indices[token_idx]})")
-
-			# Go through each parent token
-			for rank, (value, parent_idx) in enumerate(
-					zip(topk_values[token_idx], topk_indices[token_idx]),
-					start=1
-			):
-				parent_token = tokenizer.convert_ids_to_tokens(input_ids[0][parent_idx].item())
-				print(f"\t\t{rank}. Merged into '{parent_token}' (score: {value.item():.4f}), (position: {parent_idx})")
-
-		# Show compressed sequence
-		seq_len = input_ids.size(1)
-		active_mask = ~torch.isin(torch.arange(seq_len), removed_token_indices)
-		compressed_sequence = tokenizer.decode(input_ids[0][active_mask])
-
-		print(f"\nCompressed sequence after layer {layer_idx}:")
-		# print(input_ids[0][active_mask].shape)
-		print(compressed_sequence)
-		print("\n" + "-" * 50 + "\n")
-
-	print(memory.gate_mask)
-	print(input_ids.shape)
-	print(memory.volume)
-
-	# Final compressed output
-	final_sequence = tokenizer.decode(input_ids[0][active_mask])
-
-	print("\n" + "=" * 50 + "\n")
-	print("Final compressed text:")
-	print(final_sequence)
-
-	print("\nInitial Sequence:")
-	print(tokenizer.decode(input_ids[0]))
 
 
 def main():
