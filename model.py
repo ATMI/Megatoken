@@ -27,6 +27,7 @@ class Gate(nn.Module):
 		gumbels = -torch.empty_like(gates, memory_format=torch.legacy_contiguous_format).exponential_().log()
 		gumbels = (gates + gumbels + self.bias) / self.temperature
 		gumbels = fn.logsigmoid(gumbels)
+		gumbels = torch.where(gumbels > -1, gumbels, -torch.inf)
 
 		return gumbels
 
@@ -168,7 +169,10 @@ class Model(nn.Module):
 			attn_mask = attn_mask + mask.unsqueeze(1)
 
 		self_attn_mask = attn_mask.unsqueeze(1)
-		self_attn_mask[eos_mask[0], :, :, eos_mask[1]] = 0.0
+		input_lengths = pad_mask.sum(dim=1)
+		self_attn_zero_mask = torch.arange(input_length, device=device).unsqueeze(0) >= input_lengths.unsqueeze(1)
+		self_attn_zero_mask = self_attn_zero_mask.unsqueeze(1)
+		self_attn_mask[self_attn_zero_mask] = 0.0
 
 		cross_attn_mask = torch.where(memory.pad_mask, 0, -torch.inf)
 		cross_attn_mask = cross_attn_mask + memory.gate_mask
