@@ -11,12 +11,15 @@ from batch import Batch
 from config import Config
 from model import Model
 
+
 def rnd():
+	# torch.backends.cudnn.deterministic = True
+	# torch.backends.cudnn.benchmark = False
+
 	random.seed(Config.seed)
 	torch.manual_seed(Config.seed)
 	torch.cuda.manual_seed(Config.seed)
-	# torch.backends.cudnn.deterministic = True
-	# torch.backends.cudnn.benchmark = False
+
 
 def dataset():
 	path = Path("dataset")
