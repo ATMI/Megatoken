@@ -12,9 +12,9 @@ This leads to a better preservation of details and order.
 Unlike usual transformer encoders, CoTA encoder decides which vectors to keep after applying attention mechanism.
 The model has been trained to accurately reconstruct the sequence while keeping the number of embeddings small.
 
+![cot_mask.png](readme/images/cot_mask.png)
+
 CoTA can be adopted to any Transformer encoder model without significant effort.
 This approach do not require any additional parameters to be introduced.
 Zero element of the vectors after attention mechanism is used to determine whether to keep or eliminate the vector.
 Vector elimination may be implemented either using attention mask or removing vectors from tensor.
-
-![cot_mask.png](readme/images/cot_mask.png)
