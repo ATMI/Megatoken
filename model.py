@@ -28,6 +28,9 @@ class Gate(nn.Module):
 		gumbels = (gates + gumbels + self.bias) / self.temperature
 		gumbels = fn.logsigmoid(gumbels)
 
+		if not self.training:
+			gumbels = torch.where(gumbels > -1, gumbels, -torch.inf)
+
 		return gumbels
 
 
