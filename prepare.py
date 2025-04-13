@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Tuple
 
+import torch
+import random
 import datasets
 from torch.utils import data
 from transformers import AutoTokenizer
@@ -9,6 +11,12 @@ from batch import Batch
 from config import Config
 from model import Model
 
+def rnd():
+	random.seed(Config.seed)
+	torch.manual_seed(Config.seed)
+	torch.cuda.manual_seed(Config.seed)
+	# torch.backends.cudnn.deterministic = True
+	# torch.backends.cudnn.benchmark = False
 
 def dataset():
 	path = Path("dataset")
@@ -29,7 +37,6 @@ def dataset():
 
 	ds = datasets.load_dataset(Config.dataset)
 	ds = ds.map(tokenize, batched=True, num_proc=4)
-	ds = ds.select_columns(["tokens"])
 	ds.save_to_disk(path)
 
 	return ds
@@ -43,7 +50,6 @@ def dataloaders() -> Tuple[
 	train_loader = data.DataLoader(
 		dataset=ds["train"],
 		batch_size=Config.batch_size,
-		shuffle=True,
 		collate_fn=Batch.collate,
 	)
 	test_loader = data.DataLoader(
