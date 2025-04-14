@@ -4,9 +4,9 @@ CoTA introduces a novel approach to representing sequential data. Instead of rel
 vector, CoTA utilizes a variable number of embedding vectors. This method enhances the preservation
 of details and maintains the order more effectively.
 
-| ![transformer_encoder.png](readme/images/transformer_encoder.png) | ![cot_encoder.png](readme/images/cot_encoder.png) |
-|:-----------------------------------------------------------------:|:-------------------------------------------------:|
-|                    Typical transformer encoder                    |                   CoTA encoder                    |
+| ![bert_encoder.png](readme/images/bert_encoder.png) | ![cot_encoder.png](readme/images/cot_encoder.png) |
+|:---------------------------------------------------:|:-------------------------------------------------:|
+|                   Typical encoder                   |                   CoTA encoder                    |
 
 Unlike typical transformer encoders, the CoTA encoder selects which vectors to retain after applying
 the attention mechanism. The model is trained to accurately reconstruct the sequence while
@@ -21,9 +21,9 @@ vectors after the attention mechanism to decide whether to keep or eliminate a v
 elimination can be implemented either by using an attention mask or by directly removing vectors
 from the tensor.
 
-| ![transformer_decoder.png](readme/images/transformer_decoder.png) | ![transformer_decoder_strong.png](readme/images/transformer_decoder_strong.png) |
-|:-----------------------------------------------------------------:|:-------------------------------------------------------------------------------:|
-|         Decoder uses embedding to infer the masked token          |     Decoder has enough context to infer the masked token without embedding      |
+| ![ae_decoder.png](readme/images/ae_decoder.png)  |     ![ae_decoder_strong.png](readme/images/ae_decoder_strong.png)      |
+|:------------------------------------------------:|:----------------------------------------------------------------------:|
+| Decoder uses embedding to infer the masked token | Decoder has enough context to infer the masked token without embedding |
 
 Originally, CoTA was trained for next-token prediction. Several research groups studying transformer
 autoencoders have noted the issue of an overly powerful decoder, where the decoder can infer the
