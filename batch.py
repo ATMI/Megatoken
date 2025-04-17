@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import List
 
 import torch
 from torch import Tensor
@@ -9,6 +10,7 @@ from config import Config
 
 @dataclass
 class Batch:
+	ids: List[int]
 	inputs: Tensor
 	labels: Tensor
 
@@ -18,6 +20,7 @@ class Batch:
 
 	def to(self, device) -> "Batch":
 		return Batch(
+			self.ids,
 			self.inputs.to(device),
 			self.labels.to(device),
 			self.eos_mask.to(device),
@@ -27,6 +30,7 @@ class Batch:
 
 	@staticmethod
 	def collate(batch) -> "Batch":
+		ids = [row["id"] for row in batch]
 		tokens = [row["tokens"] for row in batch]
 		inputs = [torch.tensor(row) for row in tokens]
 		inputs = rnn.pad_sequence(inputs, batch_first=True, padding_value=Config.pad_token)
@@ -52,4 +56,11 @@ class Batch:
 		labels = torch.cat((inputs[:, 1:], labels), dim=1)
 		labels[~pad_mask] = Config.ignore_token
 
-		return Batch(inputs, labels, eos_mask, pad_mask, decoder_mask)
+		return Batch(
+			ids,
+			inputs,
+			labels,
+			eos_mask,
+			pad_mask,
+			decoder_mask,
+		)

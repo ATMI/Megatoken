@@ -1,118 +1,61 @@
-import math
-from dataclasses import dataclass
-from typing import Tuple, List
+import io
+import os
 
 import numpy as np
 import torch
 from torch import Tensor
 
-DIM_MAX = 4
-DIM_BYTES = 2
-HEADER_BYTES = (DIM_MAX * DIM_BYTES)
-
-
-@dataclass
-class Header:
-	# TODO: dtype
-	shape: Tuple[int, ...]
-
-	@property
-	def size(self) -> int:
-		# TODO: dtype shape
-		size = 4 * math.prod(self.shape)
-		return size
-
-	@staticmethod
-	def from_tensor(tensor: Tensor) -> "Header":
-		shape = tuple(tensor.shape)
-		return Header(
-			shape=shape,
-		)
-
-	@staticmethod
-	def from_bytes(data: bytes) -> "Header":
-		shape = []
-		for i in range(DIM_MAX):
-			dim, data = data[:DIM_BYTES], data[DIM_BYTES:]
-			dim = int.from_bytes(dim)
-			if dim == 0:
-				continue
-			shape.append(dim)
-		shape = tuple(shape)
-
-		# size, data = data[:SIZE_STRIDE], data[SIZE_STRIDE:]
-		# size = int.from_bytes(size)
-
-		return Header(
-			shape=shape,
-		)
-
-	def to_bytes(self) -> bytes:
-		padding = DIM_MAX - len(self.shape)
-		padding = (0,) * padding
-
-		shape = self.shape + padding
-		shape = (dim.to_bytes(DIM_BYTES) for dim in shape)
-		shape = b''.join(shape)
-
-		return shape
-
 
 class Writer:
 	def __init__(self, path: str) -> None:
-		self.file = open(path, "wb")
+		if not os.path.exists(path):
+			os.makedirs(path, exist_ok=True)
 
-	def write(self, tensor: Tensor) -> None:
-		header = Header.from_tensor(tensor)
-		header = header.to_bytes()
+		buffer = os.path.join(path, "tensor.npy")
+		buffer = open(buffer, "wb")
 
-		tensor = tensor.numpy()
-		tensor = tensor.tobytes()
+		self.buffer = io.BufferedWriter(buffer)
+		self.id2pos = []
+		self.path = path
 
-		self.file.write(header)
-		self.file.write(tensor)
+	def write(self, id: int, tensor: Tensor) -> None:
+		position = self.buffer.tell()
+		np.save(self.buffer, tensor.numpy())
+
+		header = np.array([id, position], dtype=np.long)
+		self.id2pos.append(header)
 
 	def close(self) -> None:
-		self.file.close()
+		self.buffer.close()
+		layout = os.path.join(self.path, "layout.npy")
+		np.save(layout, self.id2pos)
 
 
 class Reader:
 	def __init__(self, path: str) -> None:
-		self.header = Reader.read_header(path)
-		self.file = open(path, "rb")
+		buffer = os.path.join(path, "tensor.npy")
+		layout = os.path.join(path, "layout.npy")
 
-	@staticmethod
-	def read_header(path: str) -> List[Tuple[int, Header]]:
-		position = 0
-		headers = []
+		self.buffer = open(buffer, "rb")
+		self.layout = np.load(layout)
+		self.id2pos = {
+			header[0]: header[1]
+			for header in self.layout
+		}
 
-		file = open(path, "rb")
-		while True:
-			header = file.read(HEADER_BYTES)
-			if not header:
-				break
+	def by_id(self, id: int) -> Tensor:
+		position = self.id2pos[id]
+		return self.by_pos(position)
 
-			position += HEADER_BYTES
-			header = Header.from_bytes(header)
-			headers.append((position, header))
+	def by_index(self, index: int) -> Tensor:
+		pos = self.layout[index][1]
+		return self.by_pos(pos)
 
-			seek = header.size
-			file.seek(seek, 1)
-			position += seek
-		file.close()
-
-		return headers
-
-	def read(self, index: int) -> Tensor:
-		position, header = self.header[index]
-		self.file.seek(position, 0)
-
-		tensor = self.file.read(header.size)
-		tensor = np.frombuffer(tensor, dtype=np.float32)
-		tensor = tensor.reshape(header.shape)
-		tensor = torch.from_numpy(tensor)
-
+	def by_pos(self, pos: int) -> Tensor:
+		self.buffer.seek(pos)
+		tensor = np.load(self.buffer)
+		tensor = torch.from_numpy(tensor.copy())
 		return tensor
 
 	def close(self) -> None:
-		self.file.close()
+		self.buffer.close()

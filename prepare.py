@@ -26,7 +26,7 @@ def dataset():
 	if path.exists():
 		return datasets.load_from_disk(path)
 
-	def tokenize(batch):
+	def tokenize(batch, idx):
 		tokenizer = AutoTokenizer.from_pretrained(Config.model)
 		tokens = tokenizer(
 			batch["text"],
@@ -36,10 +36,13 @@ def dataset():
 			return_attention_mask=False,
 		)
 		tokens = tokens["input_ids"]
-		return {"tokens": tokens}
+		return {
+			"id": idx,
+			"tokens": tokens,
+		}
 
 	ds = datasets.load_dataset(Config.dataset)
-	ds = ds.map(tokenize, batched=True, num_proc=4)
+	ds = ds.map(tokenize, with_indices=True, batched=True, num_proc=4)
 	ds.save_to_disk(path)
 
 	return ds

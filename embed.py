@@ -10,7 +10,7 @@ def main():
 	prepare.rnd()
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	train_loader, test_loader = prepare.dataloaders()
+	train_loader, _ = prepare.dataloaders()
 
 	model = prepare.model()
 	model = model.eval()
@@ -38,11 +38,11 @@ def main():
 		mask = mask.cpu()
 
 		head = 0
-		for length in mask:
+		for id, length in zip(batch.ids, mask):
 			tail = head + length
 			data = embeds[head:tail]
 			head = tail
-			writer.write(data)
+			writer.write(id, data)
 	writer.close()
 
 
