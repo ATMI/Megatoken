@@ -24,14 +24,17 @@ class Gate(nn.Module):
 	) -> Tuple[Tensor]:
 		gates = embeds[:, :, 0]
 
-		gumbels = -torch.empty_like(gates, memory_format=torch.legacy_contiguous_format).exponential_().log()
-		gumbels = (gates + gumbels + self.bias) / self.temperature
-		gumbels = fn.logsigmoid(gumbels)
+		if self.training:
+			gumbels = -torch.empty_like(gates, memory_format=torch.legacy_contiguous_format).exponential_().log()
+			gates = gates + gumbels
+
+		gates = (gates + self.bias) / self.temperature
+		gates = fn.logsigmoid(gates)
 
 		if not self.training:
-			gumbels = torch.where(gumbels > -1, gumbels, -torch.inf)
+			gates = torch.where(gates > -1, gates, -torch.inf)
 
-		return gumbels
+		return gates
 
 
 class Model(nn.Module):
