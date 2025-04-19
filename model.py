@@ -62,7 +62,7 @@ class Model(nn.Module):
 		self.t5 = T5ForConditionalGeneration.from_pretrained(name)
 		self.gates = nn.ModuleList(
 			Gate(bias, temperature)
-			for _ in range(len(self.t5.encoder.block) // 2)
+			for _ in range(len(self.t5.encoder.block))
 		)
 
 	def encode(
@@ -100,9 +100,7 @@ class Model(nn.Module):
 		input_indices = torch.arange(input_length, device=device)
 
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
-			if i % 2 == 0:
-				embeds[:, :, 0] = 0.0
-
+			embeds[:, :, 0] = 0.0
 			embeds, attn_mask = encoder_layer(
 				hidden_states=embeds,
 				cache_position=cache_position,
@@ -111,21 +109,18 @@ class Model(nn.Module):
 				output_attentions=False,
 			)
 
-			if i % 2 == 0:
-				i //= 2
+			gate_layer = self.gates[i]
+			gate = gate_layer(embeds=embeds)
+			gate[eos_mask[0], eos_mask[1]] = 0.0
+			gate_mask = gate_mask + gate
 
-				gate_layer = self.gates[i]
-				gate = gate_layer(embeds=embeds)
-				gate[eos_mask[0], eos_mask[1]] = 0.0
-				gate_mask = gate_mask + gate
+			gate = gate.unsqueeze(1) + gate.unsqueeze(2)
+			attn_mask = attn_mask + gate.unsqueeze(1)
+			attn_mask[:, :, input_indices, input_indices] = 0.0
 
-				gate = gate.unsqueeze(1) + gate.unsqueeze(2)
-				attn_mask = attn_mask + gate.unsqueeze(1)
-				attn_mask[:, :, input_indices, input_indices] = 0.0
-
-				volume = (gate_mask / math.sqrt(kv_dim)).exp()
-				volume = (volume * pad_mask).sum(dim=1)
-				volumes[:, i] = volume
+			volume = (gate_mask / math.sqrt(kv_dim)).exp()
+			volume = (volume * pad_mask).sum(dim=1)
+			volumes[:, i] = volume
 
 		embeds = self.t5.encoder.final_layer_norm(embeds)
 		embeds = self.t5.encoder.dropout(embeds)
