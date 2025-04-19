@@ -62,7 +62,7 @@ class Model(nn.Module):
 		self.t5 = T5ForConditionalGeneration.from_pretrained(name)
 		self.gates = nn.ModuleList(
 			Gate(bias, temperature)
-			for _ in range(len(self.t5.encoder.block))
+			for _ in range(len(self.t5.encoder.block) - 2)
 		)
 
 	def encode(
@@ -108,6 +108,10 @@ class Model(nn.Module):
 				position_bias=attn_mask if i > 0 else None,
 				output_attentions=False,
 			)
+
+			if i == 0 or i == len(self.t5.encoder.block) - 1:
+				continue
+			i -= 1
 
 			gate_layer = self.gates[i]
 			gate = gate_layer(embeds=embeds)
