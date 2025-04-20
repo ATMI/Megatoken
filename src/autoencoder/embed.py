@@ -15,7 +15,6 @@ def main():
 	args = argparse.ArgumentParser()
 	args.add_argument("checkpoint", help="Checkpoint file")
 	args.add_argument("subset", help="Subset to use: train or test")
-	args.add_argument("output", help="Output file name")
 	args = args.parse_args()
 
 	torch.set_grad_enabled(False)
@@ -36,7 +35,7 @@ def main():
 	init = torch.load(args.checkpoint, map_location=device, weights_only=True)
 	model.load_state_dict(init["model"])
 
-	writer = TensorWriter(args.output)
+	writer = TensorWriter(f"embeds.{args.subset}")
 	for batch in tqdm(dataloader):
 		batch = batch.to(device)
 		result = model.encode(
