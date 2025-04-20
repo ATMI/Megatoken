@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 from typing import Tuple
 
@@ -8,7 +9,11 @@ from transformers import T5ForConditionalGeneration
 
 
 class Gate(nn.Module):
-	def __init__(self, bias: float, temperature: float):
+	def __init__(
+		self,
+		bias: float,
+		temperature: float,
+	):
 		super(Gate, self).__init__()
 		self.bias = bias
 		self.temperature = temperature
@@ -16,18 +21,17 @@ class Gate(nn.Module):
 	def forward(
 		self,
 		embeds: Tensor,
-	) -> Tuple[Tensor, Tensor]:
-		gates = (embeds[:, :, 0] + self.bias) / self.temperature
-		scale = gates.sigmoid()
+	) -> Tuple[Tensor]:
+		gates = embeds[:, :, 0]
 
-		if self.training:
-			gates = fn.logsigmoid(gates)
-		else:
-			scale = scale > 0.5
-			gates = torch.where(scale, 0, -torch.inf)
+		gumbels = -torch.empty_like(gates, memory_format=torch.legacy_contiguous_format).exponential_().log()
+		gumbels = (gates + gumbels + self.bias) / self.temperature
+		gumbels = fn.logsigmoid(gumbels)
 
-		embeds = embeds * scale.unsqueeze(2)
-		return embeds, gates
+		if not self.training:
+			gumbels = torch.where(gumbels > -1, gumbels, -torch.inf)
+
+		return gumbels
 
 
 class Model(nn.Module):
@@ -53,14 +57,20 @@ class Model(nn.Module):
 	):
 		super(Model, self).__init__()
 		self.t5 = T5ForConditionalGeneration.from_pretrained(name)
-		self.gate = Gate(bias, temperature)
+		self.gates = nn.ModuleList(
+			Gate(bias, temperature)
+			for _ in range(len(self.t5.encoder.block) // 2)
+		)
 
 	def encode(
 		self,
 		tokens: Tensor,
+		eos_mask: Tensor,
 		pad_mask: Tensor | None,
 		attn_mask: Tensor | None,
 	) -> Memory:
+		kv_dim = self.t5.config.d_kv
+
 		device = tokens.device
 		batch_size = tokens.size(0)
 		input_length = tokens.size(1)
@@ -76,40 +86,43 @@ class Model(nn.Module):
 		# Adding dimension per attention head for HF compatibility
 		attn_mask = attn_mask.unsqueeze(1)
 		gate_mask = torch.zeros(input_length, device=device)
-
-		diag_indices = torch.arange(input_length, device=device)
-		volume = torch.zeros((batch_size, len(self.t5.encoder.block) // 2), device=device)
+		volumes = torch.zeros((batch_size, len(self.gates)), device=device)
 
 		# Kinda strange variable with cache disabled,
 		# but it's used to calculate the position bias
 		# in HF spaghetti. Trust me :)
 		cache_position = torch.arange(input_length, device=device)
-		position_bias = None
-
 		embeds = self.t5.encoder.embed_tokens(tokens)
 		embeds = self.t5.encoder.dropout(embeds)
+		input_indices = torch.arange(input_length, device=device)
 
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
-			embeds, position_bias = encoder_layer(
+			if i % 2 == 0:
+				embeds[:, :, 0] = 0.0
+
+			embeds, attn_mask = encoder_layer(
 				hidden_states=embeds,
-				attention_mask=attn_mask,
-				position_bias=position_bias,
 				cache_position=cache_position,
+				attention_mask=attn_mask,
+				position_bias=attn_mask if i > 0 else None,
+				output_attentions=False,
 			)
 
 			if i % 2 == 0:
-				continue
+				i //= 2
 
-			embeds, gates = self.gate(embeds=embeds)
-			gate_mask = gate_mask + gates
-			volume[:, i // 2] = (gate_mask.exp() * pad_mask).sum(dim=1)
+				gate_layer = self.gates[i]
+				gate = gate_layer(embeds=embeds)
+				gate[eos_mask[0], eos_mask[1]] = 0.0
+				gate_mask = gate_mask + gate
 
-			gates = gates.unsqueeze(2)
-			gates = gates.repeat(1, 1, input_length)
-			gates = gates.unsqueeze(1)
-			gates[:, :, diag_indices, diag_indices] = 0
+				gate = gate.unsqueeze(1) + gate.unsqueeze(2)
+				attn_mask = attn_mask + gate.unsqueeze(1)
+				attn_mask[:, :, input_indices, input_indices] = 0.0
 
-			attn_mask = attn_mask + gates
+				volume = (gate_mask / math.sqrt(kv_dim)).exp()
+				volume = (volume * pad_mask).sum(dim=1)
+				volumes[:, i] = volume
 
 		embeds = self.t5.encoder.final_layer_norm(embeds)
 		embeds = self.t5.encoder.dropout(embeds)
@@ -119,7 +132,7 @@ class Model(nn.Module):
 			gate_mask=gate_mask,
 
 			embeds=embeds,
-			volume=volume,
+			volume=volumes,
 		)
 
 	def decode(
@@ -148,31 +161,29 @@ class Model(nn.Module):
 		cross_attn_mask = torch.where(memory.pad_mask, 0, -torch.inf)
 		cross_attn_mask = cross_attn_mask + memory.gate_mask
 		cross_attn_mask = cross_attn_mask[:, None, None, :]
-		# cross_attn_mask = cross_attn_mask.repeat(1, 1, input_length, 1)
 
-		self_position_bias = None
-		cross_position_bias = None
 		cache_position = torch.arange(input_length, device=device)
-
 		input_embeds = self.t5.decoder.embed_tokens(tokens)
 		input_embeds = self.t5.decoder.dropout(input_embeds)
 
 		for i, decoder_layer in enumerate(self.t5.decoder.block):
 			self_attn, cross_attn, fc = decoder_layer.layer
 
-			input_embeds, _, self_position_bias = self_attn(
+			input_embeds, _, self_attn_mask = self_attn(
 				hidden_states=input_embeds,
-				attention_mask=self_attn_mask,
-				position_bias=self_position_bias,
 				cache_position=cache_position,
+				attention_mask=self_attn_mask,
+				position_bias=self_attn_mask if i > 0 else None,
+				# position_bias=None,
 			)
 
-			input_embeds, _, cross_position_bias = cross_attn(
+			input_embeds, _, cross_attn_mask = cross_attn(
 				hidden_states=input_embeds,
 				key_value_states=memory.embeds,
-				attention_mask=cross_attn_mask,
-				position_bias=cross_position_bias,
 				cache_position=cache_position,
+				attention_mask=cross_attn_mask,
+				position_bias=cross_attn_mask if i > 0 else None,
+				# position_bias=None,
 			)
 
 			input_embeds = fc(input_embeds)
@@ -189,17 +200,18 @@ class Model(nn.Module):
 	def forward(
 		self,
 		memory_tokens: Tensor,
-		input_tokens: Tensor,
-
+		memory_eos_mask: Tensor,
 		memory_pad_mask: Tensor | None,
-		input_pad_mask: Tensor | None,
+		memory_attn_mask: Tensor | None,
 
-		memory_attn_mask: Tensor | None = None,
-		input_attn_mask: Tensor | None = None,
+		input_tokens: Tensor,
+		input_pad_mask: Tensor | None,
+		input_attn_mask: Tensor | None,
 	) -> "Outputs":
 		# Encode
 		memory = self.encode(
 			tokens=memory_tokens,
+			eos_mask=memory_eos_mask,
 			pad_mask=memory_pad_mask,
 			attn_mask=memory_attn_mask,
 		)

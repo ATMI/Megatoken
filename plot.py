@@ -1,98 +1,74 @@
 import json
 from collections import defaultdict
+from time import time
+from typing import Tuple, List, Dict
 
 import matplotlib.pyplot as plt
+import numpy as np
+
+from metric import RollingMean
 
 
-def load(path: str):
-	result = defaultdict(list)
+def load(path: str) -> Tuple[int, Dict[str, List[float]]]:
+	n, result = 0, defaultdict(list)
+
 	with open(path) as f:
 		records = (json.loads(line) for line in f)
-		for step, record in enumerate(records):
-			result["step"].append(step)
+		for record in records:
 			for k, v in record.items():
 				result[k].append(v)
-	return result
+			n += 1
 
-
-def dual_plot(
-	x, y, z,
-
-	y_label: str,
-	z_label: str,
-
-	y_color: str,
-	z_color: str,
-
-	y_loc: str = "lower left",
-	z_loc: str = "upper right",
-):
-	fig, ax1 = plt.subplots()
-	ax1.plot(
-		x, y,
-		label=y_label,
-		color=y_color,
-	)
-
-	ax2 = ax1.twinx()
-	ax2.plot(
-		x, z,
-		label=z_label,
-		color=z_color,
-	)
-
-	ax1.legend(loc=y_loc)
-	ax2.legend(loc=z_loc)
-
-	plt.show()
+	return n, result
 
 
 def main():
-	data = load("log.json")
+	start = time()
+	x, data = load("log.json")
+	# x, data = load("log/a4d2a56656e1a1e4233a3d830cc0617205f467ed.json")
+	stop = time()
+	print(stop - start)
 
-	# Volume and accuracy
-	dual_plot(
-		x=data["step"],
+	def rolling(values):
+		mean = RollingMean(100)
+		mean = [mean(v) for v in values]
+		return mean
 
-		y=data["acc~"],
-		y_label="accuracy",
-		y_color="green",
-		y_loc="lower left",
+	x = np.arange(x)
+	acc = rolling(data["acc"])
+	comp = rolling(data["comp"])
+	ratio = rolling(data["rat"])
+	ratio = tuple(zip(*ratio))
 
-		# z=[math.sqrt(v) for v in data["volume~"]],
-		z=data["ratio~"],
-		z_label="ratio",
-		z_color="red",
-		z_loc="upper right",
+	fig, ax1 = plt.subplots()
+	ax1.set_ylim(0, 100)
+	ax1.set_yticks(np.arange(0, 110, 10))
+	ax1.plot(
+		x, acc,
+		label="accuracy",
+		color="g",
 	)
 
-	# Class and volume losses
-	"""
-	dual_plot(
-		x=data["step"],
+	ax2 = ax1.twinx()
+	ax2.set_ylim(0, 1)
+	ax2.set_yticks(np.arange(0, 1.1, 0.1))
 
-		y=data["class~"],
-		y_label="class",
-		y_color="green",
+	ratio = list(zip((*ratio, comp), "cmykr", ["gate 0", "gate 1", "gate 2", "gate 3", "comp"]))
+	for r, color, label in ratio:
+		ax2.plot(
+			x, r,
+			# label=label,
+			color=color,
+		)
 
-		z=data["volume~"],
-		z_label="volume",
-		z_color="red",
-	)
+	ax1.set_xlim(0, 32500)
+	ax2.set_xlim(0, 32500)
 
-	# Loss and accuracy
-	dual_plot(
-		x=data["step"],
+	ax1.legend(loc="lower left")
+	# ax2.legend(loc="upper right")
 
-		y=data["loss~"],
-		y_label="loss",
-		y_color="green",
-
-		z=data["acc~"],
-		z_label="accuracy",
-		z_color="red",
-	)
-	"""
+	plt.grid(True)
+	plt.show()
 
 
 if __name__ == "__main__":

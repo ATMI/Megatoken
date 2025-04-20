@@ -13,10 +13,7 @@ from prompt import prompt
 
 
 def main():
-	torch.manual_seed(Config.seed)
-	torch.cuda.manual_seed(Config.seed)
-	# torch.backends.cudnn.deterministic = True
-	# torch.backends.cudnn.benchmark = False
+	prepare.rnd()
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	train_loader, test_loader = prepare.dataloaders()
@@ -25,7 +22,7 @@ def main():
 	model = model.to(device)
 	optimizer = optim.Adam(model.parameters(), Config.lr)
 
-	# init = torch.load("16247.pth", map_location=device, weights_only=True)
+	# init = torch.load("checkpoint.pth", map_location=device, weights_only=True)
 	# model.load_state_dict(init["model"])
 	# optimizer.load_state_dict(init["optimizer"])
 
@@ -61,6 +58,7 @@ def main():
 		batch = batch.to(device)
 		result = model.forward(
 			memory_tokens=batch.inputs,
+			memory_eos_mask=batch.eos_mask,
 			memory_pad_mask=batch.pad_mask,
 			memory_attn_mask=None,
 
@@ -69,46 +67,51 @@ def main():
 			input_attn_mask=batch.decoder_mask,
 		)
 
-		input_lengths = batch.pad_mask.sum(dim=1)
-		ratio = result.volume[:, -1] / input_lengths
-		ratio = ratio.mean(dim=0).item()
+		input_lengths = batch.pad_mask.sum(dim=1, keepdim=True)
+		input_lengths = torch.cat((input_lengths, result.volume[:, :-1]), dim=1)
 
-		input_lengths = input_lengths.unsqueeze(1)
-		loss_volume = result.volume / input_lengths
-		loss_volume = loss_volume.mean(dim=1).mean(dim=0)
+		ratios = result.volume / input_lengths
+		input_lengths = input_lengths[:, 0]
 
-		loss_class = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
-		loss = loss_class + 5 * loss_volume
+		# loss_vol = ratios.mean()
+		loss_vol = (ratios ** 2).mean()
+		loss_cls = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
+
+		if step > Config.warmup:
+			loss = loss_cls + 3 * loss_vol
+		else:
+			loss = loss_cls
 
 		loss.backward()
 		optimizer.step()
-		torch.cuda.empty_cache()
+		# torch.cuda.empty_cache()
 
 		acc = accuracy(result.logits, batch.labels) * 100
-		loss_volume = loss_volume.item()
-		loss_class = loss_class.item()
+		comp = (result.volume[:, -1] / input_lengths).mean().item()
+		ratios = ratios.mean(dim=0).tolist()
+		loss_vol = loss_vol.item()
+		loss_cls = loss_cls.item()
 		loss = loss.item()
 
-		acc_, loss_, loss_volume_, loss_class_, ratio_ = rolling(acc, loss, loss_volume, loss_class, ratio)
-
 		log = {
-			"acc": acc, "acc~": acc_,
-			"loss": loss, "loss~": loss_,
-			"class": loss_class, "class~": loss_class_,
-			"volume": loss_volume, "volume~": loss_volume_,
-			"ratio": ratio, "ratio~": ratio_,
+			"acc": acc,
+			"los": loss,
+			"cls": loss_cls,
+			"vol": loss_vol,
+			"rat": ratios,
+			"comp": comp,
 		}
 		log_file.write(json.dumps(log) + "\n")
 		log_file.flush()
 
-		postfix = {
-			"acc": f"{acc_:.2f}",
-			"loss": f"{loss_:.3f}",
-			"class": f"{loss_class_:.3f}",
-			"volume": f"{loss_volume_:.3f}",
-			"ratio": f"{ratio_ * 100:.2f}",
-		}
-		bar.set_postfix(**postfix)
+		acc, comp, ratios, loss, loss_vol, loss_cls = rolling(acc, comp, ratios, loss, loss_vol, loss_cls)
+		bar.set_postfix(
+			acc=f"{acc:.2f}",
+			comp=f"{comp:.3f}",
+			los=f"{loss:.3f}",
+			cls=f"{loss_cls:.3f}",
+			vol=f"{loss_vol:.3f}",
+		)
 		bar.update(1)
 
 		if (step + 1) % (step_num // 10) == 0 or (step + 1) == step_num:

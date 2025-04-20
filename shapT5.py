@@ -5,23 +5,20 @@ import prepare
 from model import Model
 from transformers import AutoTokenizer
 from config import Config
-import shap
-import torch
 import numpy as np
 import warnings
 from sklearn.exceptions import ConvergenceWarning
 import seaborn as sns
-
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+import math
 
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 torch.set_grad_enabled(False)
 INIT_TOKENS = 2
+show_progress = True
 
 def plot_seaborn(sentence, influence, key_words, skip_tokens=0, save_path=None):
     assert influence.shape == (len(key_words), len(sentence) - skip_tokens), \
-        f"Influence shape must be ({len(key_words)}, {len(sentence) - skip_tokens})"
+        f"Influence shape must be ({len(key_words)}, {len(sentence) - skip_tokens}), but got {influence.shape}"
 
     n_total = len(sentence)
     k = len(key_words)
@@ -58,28 +55,12 @@ def plot_seaborn(sentence, influence, key_words, skip_tokens=0, save_path=None):
     else:
         plt.show()
 
-
-
-def plot(results):
-    shap_values, token = results
-    shap_values_np = np.array(shap_values).squeeze()
-
-    #reversed_shap_values = -shap_values_np  # No need for diagonal extraction
-
-    plt.figure(figsize=(12, 5))
-    plt.bar(range(len(shap_values_np)), shap_values_np)
-    plt.ylim(-1, 1)
-    plt.xlabel("Token Index (Valid Ones)")
-    plt.ylabel("SHAP Value (Reversed Importance)")
-    plt.title(f"Reversed Token Importance in Cross-Attention (Gate Mask Analysis) for token '{token}'")
-    plt.show()
-
-
-class SHAPexplainer():
+class CustomSHAPexplainer():
     def __init__(self):
         self.tokenizer = AutoTokenizer.from_pretrained(Config.model)
         self.model = prepare.model()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         checkpoint = torch.load("checkpoint.pth", map_location=self.device, weights_only=True)
         self.model.eval()
         self.model.load_state_dict(checkpoint["model"])
@@ -90,12 +71,16 @@ class SHAPexplainer():
         self.memory = None
         self.input_ids = None
 
-    def shap_eval(self, sentence, steps):
+    def shap_eval(self, sentence, steps, nsamples=300):
         tokenized = self.tokenizer.encode(sentence)
         memory_ids = torch.tensor(tokenized).unsqueeze(0).to(self.device)
         self.memory = self.model.encode(
             tokens=memory_ids,
-            eos_mask= torch.stack((torch.arange(1,device=self.device), torch.tensor([memory_ids.shape[1] - 1], device=self.device, dtype=torch.long))),
+            eos_mask=torch.stack((
+                torch.arange(1, device=self.device),
+                torch.tensor([memory_ids.shape[1] - 1], device=self.device, dtype=torch.long)
+            )),
+
             pad_mask=torch.ones((1, memory_ids.shape[1]), dtype=torch.bool).to(self.device),
             attn_mask=None,
         )
@@ -103,24 +88,20 @@ class SHAPexplainer():
 
         tokens = self.generate_tokens(steps, memory_ids)
         decoded_tokens = [self.tokenizer.decode([token], skip_special_tokens=False) for token in tokens[0]]
-        print(tokens)
-        print(decoded_tokens)
+        if show_progress:
+            print(tokens)
+            print(decoded_tokens)
 
         values_array = []
         for i in range(INIT_TOKENS, steps + INIT_TOKENS):
             self.input_ids = tokens[:, :i]
             self.correct_token_id = tokens[:, i]
             data, total_inds = self.prepare_data()
-            explainer = shap.KernelExplainer(self.shap_predict, data)
 
-            shap_values = explainer.shap_values(
-                np.zeros((1, total_inds)),
-                nsamples=300
-            )
+            shap_values = self.compute_shap_values(data, total_inds, nsamples=nsamples).reshape(1, -1, 1)
             values_array.append([shap_values, self.tokenizer.decode(self.correct_token_id)])
 
         decoded_memory = [self.tokenizer.decode([token], skip_special_tokens=False) for token in memory_ids[self.memory.gate_mask==0]]
-
 
         return values_array, decoded_tokens, decoded_memory
 
@@ -131,7 +112,10 @@ class SHAPexplainer():
                 memory_tokens=memory_ids,
                 memory_pad_mask=torch.ones((1, memory_ids.shape[1]), dtype=torch.bool).to(self.device),
                 memory_attn_mask=None,
-                memory_eos_mask= torch.stack((torch.arange(1,device=self.device), torch.tensor([memory_ids.shape[1] - 1], device=self.device, dtype=torch.long))),
+                memory_eos_mask=torch.stack((
+                    torch.arange(1, device=self.device),
+                    torch.tensor([memory_ids.shape[1] - 1], device=self.device, dtype=torch.long)
+                )),
 
                 input_tokens=tokens,
                 input_pad_mask=torch.ones((1, tokens.shape[1]), dtype=torch.bool).to(self.device),
@@ -144,6 +128,50 @@ class SHAPexplainer():
             tokens = torch.cat((tokens, prediction), dim=-1)
 
         return tokens
+
+    def compute_shap_values(self, data, total_inds, nsamples=300):
+        total_inds_int = total_inds.item() if isinstance(total_inds, torch.Tensor) else total_inds
+
+        shap_values = np.zeros(total_inds_int)
+
+        coalitions = np.random.randint(0, 2, size=(nsamples, total_inds_int))
+
+        iterator = range(total_inds_int)
+        if show_progress:
+            iterator = tqdm(iterator, desc="Computing SHAP values")
+
+        for feature_idx in iterator:
+            coalitions_with_feature = coalitions.copy()
+            coalitions_without_feature = coalitions.copy()
+
+            coalitions_with_feature[:, feature_idx] = 0
+            coalitions_without_feature[:, feature_idx] = 1
+
+            preds_with_feature = self.shap_predict(coalitions_with_feature)
+            preds_without_feature = self.shap_predict(coalitions_without_feature)
+
+            marginal_contributions = preds_with_feature - preds_without_feature
+
+            coalition_sizes = np.sum(coalitions, axis=1)
+            weights = np.array([self.compute_coalition_weight(size, total_inds_int) for size in coalition_sizes])
+
+            weighted_contributions = weights * marginal_contributions.squeeze()
+            feature_contribution = np.sum(weighted_contributions)
+
+            shap_values[feature_idx] = feature_contribution / np.sum(weights)
+
+        return shap_values
+    
+    def compute_coalition_weight(self, coalition_size, total_features):
+        if coalition_size == 0 or coalition_size == total_features:
+            return 1.0 / total_features
+
+        n = total_features
+        s = coalition_size
+
+        binom_coeff = math.comb(n-1, s-1)
+        
+        return 1.0 / (n * binom_coeff)
 
     def shap_predict(self, masked_indices):
         masked_indices = torch.tensor(masked_indices, dtype=torch.bool, device=self.device)
@@ -187,14 +215,20 @@ class SHAPexplainer():
         data = data.cpu().detach().numpy()
         return data, total_inds
 
-if __name__ == "__main__":
-    start_sent = "This cafe is a hidden gem! The cozy atmosphere and excellent coffee make it the perfect spot to relax and unwind. The staff are friendly and attentive, always ensuring that your cup is full."
-    shaper = SHAPexplainer()
-    steps = 32
-    results, decoded_sent, token_ids = shaper.shap_eval(start_sent, steps)
+def shap_values(start_sent,steps,nsamples = 300,init_tokens = 2, progress=False):
+    global INIT_TOKENS, show_progress
 
+    INIT_TOKENS = init_tokens
+    show_progress = progress
+
+    shaper = CustomSHAPexplainer()
+    results, decoded_sent, token_ids = shaper.shap_eval(start_sent, steps=steps, nsamples=nsamples)
     raw_results = [results[i][0] for i in range(len(results))]
-    accumulated_results = np.squeeze(np.concatenate(raw_results,axis = 2),axis = 0)
+    accumulated_results = np.squeeze(np.concatenate(raw_results, axis=2), axis=0)
 
     plot_seaborn(decoded_sent, accumulated_results, token_ids, skip_tokens=INIT_TOKENS)
 
+
+if __name__ == "__main__":
+    start_sent = "This cafe is a hidden gem! The cozy atmosphere and excellent coffee make it the perfect spot to relax and unwind. The staff are friendly and attentive, always ensuring that your cup is full."
+    shap_values(start_sent, 32)

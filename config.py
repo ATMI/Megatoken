@@ -16,9 +16,10 @@ class Config:
 	batch_size = 20
 	rolling_n = 10
 
+	warmup = 500
 	decoder_visibility = 5
 	temperature = 0.1
-	bias = 120
+	bias = 5
 
 
 tokenizer = AutoTokenizer.from_pretrained(Config.model)
