@@ -5,7 +5,7 @@ import torch
 from torch import Tensor
 from torch.nn.utils import rnn
 
-from config import Config
+from .config import Config
 
 
 @dataclass

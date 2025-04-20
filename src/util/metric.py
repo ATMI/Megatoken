@@ -1,7 +1,6 @@
 from operator import sub, add
 from typing import Tuple, List, Sequence
 from torch import Tensor
-from config import Config
 
 
 class RollingMean:
@@ -68,8 +67,8 @@ class RollingMean:
 		return mean
 
 
-def accuracy(logits: Tensor, target: Tensor) -> float:
-	mask = target.ne(Config.ignore_token)
+def accuracy(logits: Tensor, target: Tensor, ignore: int) -> float:
+	mask = target.ne(ignore)
 	pred = logits[mask].argmax(dim=1)
 	true = target[mask]
 

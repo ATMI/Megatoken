@@ -8,8 +8,8 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 import Levenshtein
 
-import prepare
-from config import Config
+from .config import Config
+from ..util import prepare
 
 
 def run(

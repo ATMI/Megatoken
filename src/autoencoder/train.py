@@ -6,19 +6,22 @@ from torch import optim
 from torch.nn import functional as fn
 from tqdm import tqdm
 
-import prepare
-from config import Config
-from metric import RollingMean, accuracy
-from prompt import prompt
+from .config import Config
+from .batch import Batch
+from .model import Model
+
+from ..util import prepare
+from ..util.metric import RollingMean, accuracy
+from ..util.prompt import prompt
 
 
 def main():
-	prepare.rnd()
+	prepare.rnd(Config.seed)
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	train_loader, test_loader = prepare.dataloaders()
+	train_loader, _ = prepare.dataloaders(Config.batch_size, Batch.collate)
 
-	model = prepare.model()
+	model = Model(Config.model, Config.bias, Config.temperature)
 	model = model.to(device)
 	optimizer = optim.Adam(model.parameters(), Config.lr)
 
@@ -86,7 +89,7 @@ def main():
 		optimizer.step()
 		# torch.cuda.empty_cache()
 
-		acc = accuracy(result.logits, batch.labels) * 100
+		acc = accuracy(result.logits, batch.labels, Config.ignore_token) * 100
 		comp = (result.volume[:, -1] / input_lengths).mean().item()
 		ratios = ratios.mean(dim=0).tolist()
 		loss_vol = loss_vol.item()

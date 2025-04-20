@@ -1,8 +1,8 @@
 import torch
 from tqdm import tqdm
 
-import binfile
-import prepare
+from ..util import prepare
+from ..util.tensorfile import TensorWriter
 
 
 def main():
@@ -20,7 +20,7 @@ def main():
 	init = torch.load(init, map_location=device, weights_only=True)
 	model.load_state_dict(init["model"])
 
-	writer = binfile.Writer("embeds")
+	writer = TensorWriter("embeds")
 	for batch in tqdm(train_loader):
 		batch = batch.to(device)
 		result = model.encode(

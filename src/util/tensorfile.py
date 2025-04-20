@@ -6,7 +6,7 @@ import torch
 from torch import Tensor
 
 
-class Writer:
+class TensorWriter:
 	def __init__(self, path: str) -> None:
 		if not os.path.exists(path):
 			os.makedirs(path, exist_ok=True)
@@ -31,7 +31,7 @@ class Writer:
 		np.save(layout, self.id2pos)
 
 
-class Reader:
+class TensorReader:
 	def __init__(self, path: str) -> None:
 		buffer = os.path.join(path, "tensor.npy")
 		layout = os.path.join(path, "layout.npy")

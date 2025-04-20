@@ -6,7 +6,7 @@ from typing import Tuple, List, Dict
 import matplotlib.pyplot as plt
 import numpy as np
 
-from metric import RollingMean
+from .metric import RollingMean
 
 
 def load(path: str) -> Tuple[int, Dict[str, List[float]]]:

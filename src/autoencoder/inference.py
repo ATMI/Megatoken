@@ -3,8 +3,8 @@ import argparse
 import torch
 from transformers import AutoTokenizer, T5Tokenizer
 
-import prepare
-from config import Config
+from .config import Config
+from ..util import prepare
 
 
 def inference(

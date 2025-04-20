@@ -7,17 +7,17 @@ from torch import optim
 from torch.utils import data
 from tqdm import tqdm
 
-import binfile
-import prepare
-from config import Config
-from metric import RollingMean
+from src.util import prepare
+from src.autoencoder.config import Config
+from src.util.metric import RollingMean
+from src.util.tensorfile import TensorReader
 
 
 class Dataset(data.Dataset):
 	def __init__(self):
 		super(Dataset, self).__init__()
 
-		self.embed = binfile.Reader("embeds")
+		self.embed = TensorReader("embeds")
 		self.ds = prepare.dataset()["train"]
 
 	def __len__(self):
@@ -60,7 +60,7 @@ class Batch:
 		)
 
 	@staticmethod
-	def collate_fn(batch: List[Tuple[Tensor, bool]]) -> "Batch":
+	def collate(batch: List[Tuple[Tensor, bool]]) -> "Batch":
 		embeds = []
 		labels = []
 		indices = []
@@ -89,7 +89,7 @@ def main():
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	dataset = Dataset()
-	dataloader = data.DataLoader(dataset, Config.batch_size, collate_fn=Batch.collate_fn)
+	dataloader = data.DataLoader(dataset, Config.batch_size, collate_fn=Batch.collate)
 
 	model = Classifier()
 	model = model.to(device)
