@@ -99,12 +99,12 @@ class Confusion:
 	@property
 	def precision(self) -> float:
 		p = self.tp + self.fp
-		return self.tp / p if p > 0 else 0
+		return self.tp / p if p > 0 else 0.0
 
 	@property
 	def recall(self) -> float:
 		p = self.tp + self.fn
-		return self.tp / p if p > 0 else 0
+		return self.tp / p if p > 0 else 0.0
 
 	@property
 	def accuracy(self) -> float:

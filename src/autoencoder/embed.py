@@ -43,6 +43,7 @@ def main():
 			eos_mask=batch.eos_mask,
 			pad_mask=batch.pad_mask,
 			attn_mask=None,
+			attn_scores=False,
 		)
 
 		mask = (result.gate_mask > -1) & result.pad_mask

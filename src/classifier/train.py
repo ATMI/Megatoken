@@ -25,26 +25,30 @@ def main():
 
 	optimizer = optim.Adam(model.parameters(), Config.lr)
 	criterion = nn.BCEWithLogitsLoss()
-
-	bar = tqdm(dataloader)
 	rolling = RollingMean(Config.rolling_n)
 
-	for batch in bar:
-		optimizer.zero_grad()
+	for epoch in range(Config.epoch_num):
+		bar = tqdm(
+			dataloader,
+			leave=True,
+			desc=f"Epoch {epoch + 1}/{Config.epoch_num}"
+		)
+		for batch in bar:
+			optimizer.zero_grad()
 
-		batch = batch.to(device)
-		logits = model.forward(batch.embeds, batch.indices)
+			batch = batch.to(device)
+			logits = model.forward(batch.embeds, batch.indices)
 
-		loss = criterion(logits, batch.labels.float())
-		loss.backward()
-		optimizer.step()
+			loss = criterion(logits, batch.labels.float())
+			loss.backward()
+			optimizer.step()
 
-		conf = metric.confusion(logits, batch.labels)
-		a, p, r = rolling(conf.accuracy, conf.precision, conf.recall)
+			conf = metric.confusion(logits, batch.labels)
+			a, p, r = rolling(conf.accuracy, conf.precision, conf.recall)
 
-		bar.set_postfix(a=a, p=p, r=r)
-
-	torch.save(model.state_dict(), "classifier.pth")
+			bar.set_postfix(a=a, p=p, r=r)
+		bar.close()
+		torch.save(model.state_dict(), f"{epoch}_classifier.pth")
 
 
 if __name__ == "__main__":

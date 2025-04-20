@@ -1,3 +1,5 @@
+import argparse
+
 import torch
 from torch.utils import data
 from tqdm import tqdm
@@ -14,6 +16,9 @@ from ..util.metric import RollingMean
 
 def main():
 	prepare.rnd(Config.seed)
+	args = argparse.ArgumentParser()
+	args.add_argument("checkpoint")
+	args = args.parse_args()
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	dataset = Dataset("test")
@@ -26,8 +31,7 @@ def main():
 	model = Classifier()
 	model = model.to(device)
 
-	init = "classifier.pth"
-	init = torch.load(init, map_location=device, weights_only=True)
+	init = torch.load(args.checkpoint, map_location=device, weights_only=True)
 	model.load_state_dict(init)
 
 	bar = tqdm(dataloader)
