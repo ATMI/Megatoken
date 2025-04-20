@@ -35,7 +35,7 @@ def plot_seaborn(sentence, influence, key_words, skip_tokens=0, save_path=None):
         annot=[[f"{val:.2f}" if not np.isnan(val) else "" for val in row] for row in full_influence],
         xticklabels=sentence,
         yticklabels=key_words,
-        cmap="RdBu",
+        cmap="RdBu_r",
         center=0,
         linewidths=0.5,
         cbar_kws={'label': 'Influence Score'},
