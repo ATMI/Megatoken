@@ -1,6 +1,6 @@
 import math
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Tuple, List
 
 import torch
 from torch import nn, Tensor
@@ -52,6 +52,9 @@ class Model(nn.Module):
 		embeds: Tensor
 		volume: Tensor
 
+		attn_scores: List[Tensor]
+		gates: List[Tensor]
+
 	def __init__(
 		self,
 		name: str,
@@ -99,15 +102,19 @@ class Model(nn.Module):
 		embeds = self.t5.encoder.dropout(embeds)
 		input_indices = torch.arange(input_length, device=device)
 
+		attn_scores = []
+		gates = []
+
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
 			embeds[:, :, 0] = 0.0
-			embeds, attn_mask = encoder_layer(
+			embeds, attn_mask, attn_score = encoder_layer(
 				hidden_states=embeds,
 				cache_position=cache_position,
 				attention_mask=attn_mask,
 				position_bias=attn_mask if i > 0 else None,
-				output_attentions=False,
+				output_attentions=True,
 			)
+			attn_scores.append(attn_score.squeeze())
 
 			if i == 0 or i == len(self.t5.encoder.block) - 1:
 				continue
@@ -116,6 +123,7 @@ class Model(nn.Module):
 			gate_layer = self.gates[i]
 			gate = gate_layer(embeds=embeds)
 			gate[eos_mask[0], eos_mask[1]] = 0.0
+			gates.append(gate.squeeze())
 			gate_mask = gate_mask + gate
 
 			gate = gate.unsqueeze(1) + gate.unsqueeze(2)
@@ -135,6 +143,9 @@ class Model(nn.Module):
 
 			embeds=embeds,
 			volume=volumes,
+
+			attn_scores=attn_scores,
+			gates=gates,
 		)
 
 	def decode(

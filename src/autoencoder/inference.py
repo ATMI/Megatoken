@@ -7,15 +7,13 @@ from .config import Config
 from ..util import prepare
 
 
-def inference(
-	model: torch.nn.Module,
-	tokenizer: T5Tokenizer,
-	text: str,
-	max_length: int = 512,
+def get_memory(
+		model: torch.nn.Module,
+		tokenizer: T5Tokenizer,
+		text: str,
+		device,
+		return_tokens: bool,
 ):
-	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	model = model.to(device)
-
 	tokens = tokenizer(
 		text,
 		padding=False,
@@ -23,10 +21,9 @@ def inference(
 		max_length=Config.max_length,
 		return_tensors="pt",
 	)["input_ids"].to(device)
-	pad_mask = torch.ones_like(tokens, dtype=torch.bool).to(device)
-	encoder_eos_mask = torch.tensor([[0], [tokens.size(1) - 1]])
 
-	print("Initial length:", tokens.size(1))
+	pad_mask = torch.ones_like(tokens, dtype=torch.bool, device=device)
+	encoder_eos_mask = torch.tensor([[0], [tokens.size(1) - 1]], device=device)
 
 	model.eval()
 	with torch.no_grad():
@@ -37,6 +34,24 @@ def inference(
 			eos_mask=encoder_eos_mask,
 		)
 
+	if return_tokens:
+		return memory, tokens
+
+	return memory
+
+
+def inference(
+		model: torch.nn.Module,
+		tokenizer: T5Tokenizer,
+		text: str,
+		max_length: int = 512,
+):
+	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+	model = model.to(device)
+
+	memory, tokens = get_memory(model, tokenizer, text, device, return_tokens=True)
+
+	print("Initial length:", tokens.size(1))
 	out_size = (memory.gate_mask.exp() != 0).sum().item()
 	ratio = out_size / tokens.size(1)
 	print(f"Compression rate: {ratio:.2f}")
@@ -46,7 +61,7 @@ def inference(
 
 	while True:
 		seq_length = out.size(1)
-		decoder_mask = torch.full((seq_length, seq_length), -torch.inf)
+		decoder_mask = torch.full((seq_length, seq_length), -torch.inf).to(device)
 		for i in range(seq_length):
 			decoder_mask[i:i + Config.decoder_visibility + 1, i] = 0
 		decoder_mask[:, 0] = 0
@@ -58,16 +73,15 @@ def inference(
 				tokens=out,
 				pad_mask=torch.ones_like(out, dtype=torch.bool).to(device),
 				attn_mask=decoder_mask,
-				eos_mask=decoder_eos_mask,
+				# eos_mask=decoder_eos_mask,
 			).squeeze(0)[-1]
 
 		next_tok = logits.argmax(dim=-1)
 
 		if next_tok.item() == tokenizer.eos_token_id:
-			print("\nModel reached EOS token!")
 			break
 
-		next_tok = torch.tensor([[next_tok]])
+		next_tok = torch.tensor([[next_tok]], device=device)
 		out = torch.cat((out, next_tok), dim=1).to(device)
 
 		if out.size(-1) == max_length:
@@ -77,6 +91,7 @@ def inference(
 	print("")
 	print("Initial text:\n", text, sep="")
 	print("Predicted:\n", output, sep="")
+	print("=" * 50)
 
 
 def main():
