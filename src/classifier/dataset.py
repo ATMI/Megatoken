@@ -5,11 +5,11 @@ from ..util import prepare
 
 
 class Dataset(data.Dataset):
-	def __init__(self):
+	def __init__(self, split: str):
 		super(Dataset, self).__init__()
 
-		self.embed = TensorReader("embeds")
-		self.ds = prepare.dataset()["train"]
+		self.embed = TensorReader(f"embeds.{split}")
+		self.ds = prepare.dataset()[split]
 
 	def __len__(self):
 		return len(self.ds)

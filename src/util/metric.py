@@ -1,5 +1,6 @@
+from dataclasses import dataclass
 from operator import sub, add
-from typing import Tuple, List, Sequence
+from typing import Tuple, List, Sequence, Optional
 from torch import Tensor
 
 
@@ -67,16 +68,58 @@ class RollingMean:
 		return mean
 
 
-def accuracy(logits: Tensor, target: Tensor, ignore: int) -> float:
-	mask = target.ne(ignore)
-	pred = logits[mask].argmax(dim=1)
-	true = target[mask]
+def accuracy(
+	logits: Tensor,
+	target: Tensor,
+	ignore: Optional[int] = None,
+) -> float:
+	if ignore is not None:
+		mask = target.ne(ignore)
+		logits = logits[mask]
+		target = target[mask]
 
-	corr = pred.eq(true)
+	pred = logits.argmax(dim=1)
+	corr = pred.eq(target)
 	corr = corr.sum()
-	total = true.numel()
+	total = target.numel()
 
 	acc = corr / total
 	acc = acc.item()
 
 	return acc
+
+
+@dataclass
+class Confusion:
+	tp: int
+	fp: int
+	fn: int
+	total: int
+
+	@property
+	def precision(self) -> float:
+		p = self.tp + self.fp
+		return self.tp / p if p > 0 else 0
+
+	@property
+	def recall(self) -> float:
+		p = self.tp + self.fn
+		return self.tp / p if p > 0 else 0
+
+	@property
+	def accuracy(self) -> float:
+		return 1 - (self.fp + self.fn) / self.total
+
+
+def confusion(
+	logits: Tensor,
+	target: Tensor,
+) -> Confusion:
+	pred = logits > 0
+
+	tp = ((pred == 1) & (target == 1)).sum().item()
+	fp = ((pred == 1) & (target == 0)).sum().item()
+	fn = ((pred == 0) & (target == 1)).sum().item()
+	total = pred.size(0)
+
+	return Confusion(tp=tp, fp=fp, fn=fn, total=total)
