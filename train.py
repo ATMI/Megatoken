@@ -78,7 +78,7 @@ def main():
 		loss_cls = fn.cross_entropy(result.logits.flatten(0, 1), batch.labels.flatten())
 
 		if step > Config.warmup:
-			loss = loss_cls + 5 * loss_vol
+			loss = loss_cls + 3 * loss_vol
 		else:
 			loss = loss_cls
 
