@@ -32,7 +32,7 @@ class Gate(nn.Module):
 		gates = fn.logsigmoid(gates)
 
 		if not self.training:
-			gates = torch.where(gates > -1, gates, -torch.inf)
+			gates = torch.where(gates > -1, 0, -torch.inf)
 
 		return gates
 
@@ -62,7 +62,7 @@ class Model(nn.Module):
 		self.t5 = T5ForConditionalGeneration.from_pretrained(name)
 		self.gates = nn.ModuleList(
 			Gate(bias, temperature)
-			for _ in range(len(self.t5.encoder.block) - 2)
+			for _ in range(len(self.t5.encoder.block) // 2)
 		)
 
 	def encode(
@@ -100,7 +100,9 @@ class Model(nn.Module):
 		input_indices = torch.arange(input_length, device=device)
 
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
-			embeds[:, :, 0] = 0.0
+			if i % 2 == 0:
+				embeds[:, :, 0] = 0.0
+
 			embeds, attn_mask = encoder_layer(
 				hidden_states=embeds,
 				cache_position=cache_position,
@@ -109,9 +111,9 @@ class Model(nn.Module):
 				output_attentions=False,
 			)
 
-			if i == 0 or i == len(self.t5.encoder.block) - 1:
+			if i % 2 == 1:
 				continue
-			i -= 1
+			i //= 2
 
 			gate_layer = self.gates[i]
 			gate = gate_layer(embeds=embeds)
