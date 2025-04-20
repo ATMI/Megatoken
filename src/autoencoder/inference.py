@@ -35,6 +35,7 @@ def inference(
 			pad_mask=pad_mask,
 			attn_mask=None,
 			eos_mask=encoder_eos_mask,
+			attn_scores=False,
 		)
 
 	out_size = (memory.gate_mask.exp() != 0).sum().item()

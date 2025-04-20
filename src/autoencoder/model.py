@@ -77,8 +77,11 @@ class Model(nn.Module):
 	):
 		super(Model, self).__init__()
 		self.t5 = T5ForConditionalGeneration.from_pretrained(name)
+
+		self.head_num = self.t5.config.num_heads
 		self.attn_num = len(self.t5.encoder.block)
 		self.gate_num = self.attn_num // 2
+
 		self.gates = nn.ModuleList(Gate(bias, temperature) for _ in range(self.gate_num))
 
 	def encode(
@@ -106,7 +109,7 @@ class Model(nn.Module):
 		gate_masks = torch.zeros((self.gate_num, batch_size, input_length), device=device)
 
 		if attn_scores:
-			attn_scores = torch.zeros((self.attn_num, input_length, input_length), device=device)
+			attn_scores = torch.zeros((self.attn_num, self.head_num, input_length, input_length), device=device)
 		else:
 			attn_scores = None
 
@@ -131,8 +134,8 @@ class Model(nn.Module):
 			)
 			embeds, attn_mask = outputs[0], outputs[1]
 
-			if attn_scores:
-				attn_scores[i] = outputs[2]
+			if attn_scores is not None:
+				attn_scores[i] = outputs[2][0] # .mean(dim=0)
 
 			if i % 2 == 0:
 				i //= 2
