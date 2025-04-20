@@ -12,7 +12,10 @@ class Config:
 	ignore_token = -100
 
 	seed = 42
+	epoch_num = 2
 	lr = 0.0001
+	step = 1
+	gamma = 0.1
 	batch_size = 20
 	rolling_n = 10
 
