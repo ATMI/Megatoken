@@ -1,13 +1,12 @@
 import random
 from pathlib import Path
-from typing import Tuple, Callable, List, Any
 
 import datasets
 import torch
-
-from torch.utils import data
 from transformers import AutoTokenizer
 
+
+# TODO: do something with this file :)
 
 def rnd(seed: int):
 	# torch.backends.cudnn.deterministic = True
@@ -22,28 +21,6 @@ def dataset():
 	if not path.exists():
 		raise FileNotFoundError(f"Dataset not found at {path}")
 	return datasets.load_from_disk(path)
-
-
-def dataloaders(
-	batch_size: int,
-	collate: Callable[[List], Any],
-) -> Tuple[
-	data.DataLoader,
-	data.DataLoader
-]:
-	ds = dataset()
-	train_loader = data.DataLoader(
-		dataset=ds["train"],
-		batch_size=batch_size,
-		collate_fn=collate,
-	)
-	test_loader = data.DataLoader(
-		dataset=ds["test"],
-		batch_size=batch_size,
-		shuffle=False,
-		collate_fn=collate,
-	)
-	return train_loader, test_loader
 
 
 def main() -> None:

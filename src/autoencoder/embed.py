@@ -1,27 +1,43 @@
+import argparse
+
 import torch
+from torch.utils import data
 from tqdm import tqdm
 
+from .batch import Batch
+from .config import Config
+from .model import Model
 from ..util import prepare
 from ..util.tensorfile import TensorWriter
 
 
 def main():
+	args = argparse.ArgumentParser()
+	args.add_argument("checkpoint", help="Checkpoint file")
+	args.add_argument("subset", help="Subset to use: train or test")
+	args.add_argument("output", help="Output file name")
+	args = args.parse_args()
+
 	torch.set_grad_enabled(False)
-	prepare.rnd()
+	prepare.rnd(Config.seed)
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	train_loader, _ = prepare.dataloaders()
+	dataset = prepare.dataset()
+	dataloader = data.DataLoader(
+		dataset=dataset[args.subset],
+		batch_size=Config.batch_size,
+		collate_fn=Batch.collate,
+	)
 
-	model = prepare.model()
+	model = Model(Config.model, Config.bias, Config.temperature)
 	model = model.eval()
 	model = model.to(device)
 
-	init = "checkpoint/5bf16cb1b3d90095a76b251632a5c78f6530cd2a/32499.pth"
-	init = torch.load(init, map_location=device, weights_only=True)
+	init = torch.load(args.checkpoint, map_location=device, weights_only=True)
 	model.load_state_dict(init["model"])
 
-	writer = TensorWriter("embeds")
-	for batch in tqdm(train_loader):
+	writer = TensorWriter(args.output)
+	for batch in tqdm(dataloader):
 		batch = batch.to(device)
 		result = model.encode(
 			tokens=batch.inputs,
@@ -40,9 +56,9 @@ def main():
 		head = 0
 		for id, length in zip(batch.ids, mask):
 			tail = head + length
-			data = embeds[head:tail]
+			part = embeds[head:tail]
 			head = tail
-			writer.write(id, data)
+			writer.write(id, part)
 	writer.close()
 
 

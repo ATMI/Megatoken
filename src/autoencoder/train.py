@@ -4,6 +4,7 @@ import signal
 import torch
 from torch import optim
 from torch.nn import functional as fn
+from torch.utils import data
 from tqdm import tqdm
 
 from .config import Config
@@ -19,7 +20,13 @@ def main():
 	prepare.rnd(Config.seed)
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	train_loader, _ = prepare.dataloaders(Config.batch_size, Batch.collate)
+	dataset = prepare.dataset()
+	dataloader = data.DataLoader(
+		dataset=dataset["train"],
+		batch_size=Config.batch_size,
+		shuffle=True,
+		collate_fn=Batch.collate,
+	)
 
 	model = Model(Config.model, Config.bias, Config.temperature)
 	model = model.to(device)
@@ -29,7 +36,7 @@ def main():
 	# model.load_state_dict(init["model"])
 	# optimizer.load_state_dict(init["optimizer"])
 
-	step_num = len(train_loader)
+	step_num = len(dataloader)
 	bar = tqdm(total=step_num)
 
 	log_file = open("log.json", "w")
@@ -55,7 +62,7 @@ def main():
 		finish()
 
 	signal.signal(signal.SIGINT, interrupt)
-	for step, batch in enumerate(train_loader):
+	for step, batch in enumerate(dataloader):
 		optimizer.zero_grad()
 
 		batch = batch.to(device)
