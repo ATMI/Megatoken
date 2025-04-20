@@ -4,7 +4,7 @@ import torch
 from transformers import AutoTokenizer, T5Tokenizer
 
 from .config import Config
-from ..util import prepare
+from .model import Model
 
 
 def get_memory(
@@ -61,7 +61,7 @@ def inference(
 
 	while True:
 		seq_length = out.size(1)
-		decoder_mask = torch.full((seq_length, seq_length), -torch.inf).to(device)
+		decoder_mask = torch.full((seq_length, seq_length), -torch.inf, device=device)
 		for i in range(seq_length):
 			decoder_mask[i:i + Config.decoder_visibility + 1, i] = 0
 		decoder_mask[:, 0] = 0
@@ -71,7 +71,7 @@ def inference(
 			logits = model.decode(
 				memory=memory,
 				tokens=out,
-				pad_mask=torch.ones_like(out, dtype=torch.bool).to(device),
+				pad_mask=torch.ones_like(out, dtype=torch.bool, device=device),
 				attn_mask=decoder_mask,
 				# eos_mask=decoder_eos_mask,
 			).squeeze(0)[-1]
@@ -82,7 +82,7 @@ def inference(
 			break
 
 		next_tok = torch.tensor([[next_tok]], device=device)
-		out = torch.cat((out, next_tok), dim=1).to(device)
+		out = torch.cat((out, next_tok), dim=1)
 
 		if out.size(-1) == max_length:
 			break
@@ -102,13 +102,13 @@ def main():
 	args = args.parse_args()
 
 	tokenizer = AutoTokenizer.from_pretrained(Config.model)
-	checkpoint = torch.load(args.checkpoint, map_location=torch.device("cpu"))
+	checkpoint = torch.load(args.checkpoint, weights_only=True)
 
-	model = prepare.model()
+	model = Model(Config.model, Config.bias, Config.temperature)
 	model.load_state_dict(checkpoint["model"])
 
 	while True:
-		text = input()
+		text = input("> ")
 		if not text:
 			break
 		inference(model, tokenizer, text)
