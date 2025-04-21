@@ -32,7 +32,7 @@ class Gate(nn.Module):
 		gates = fn.logsigmoid(gates)
 
 		if not self.training:
-			gates = torch.where(gates > -1, 0, -torch.inf)
+			gates = torch.where(gates > -1, gates, -torch.inf)
 
 		return gates
 
