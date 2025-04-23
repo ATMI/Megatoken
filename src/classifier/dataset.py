@@ -8,7 +8,7 @@ class Dataset(data.Dataset):
 	def __init__(self, split: str):
 		super(Dataset, self).__init__()
 
-		self.embed = TensorReader(f"embeds.{split}")
+		self.embed = TensorReader(f"embeds.cot.{split}")
 		self.ds = prepare.dataset()[split]
 
 	def __len__(self):

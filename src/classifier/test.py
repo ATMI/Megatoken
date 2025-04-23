@@ -26,21 +26,39 @@ def main():
 	model = Classifier()
 	model = model.to(device)
 
-	init = "classifier.pth"
+	init = "checkpoint/1_classifier.pth"
 	init = torch.load(init, map_location=device, weights_only=True)
 	model.load_state_dict(init)
 
 	bar = tqdm(dataloader)
 	rolling = RollingMean(Config.rolling_n)
 
-	for batch in bar:
-		batch = batch.to(device)
-		logits = model.forward(batch.embeds, batch.indices)
+	accuracies = []
+	precisions = []
+	recalls = []
 
-		conf = metric.confusion(logits, batch.labels)
-		a, p, r = rolling(conf.accuracy, conf.precision, conf.recall)
+	with torch.no_grad():
+		for batch in bar:
+			batch = batch.to(device)
+			logits = model.forward(batch.embeds, batch.indices)
 
-		bar.set_postfix(a=a, p=p, r=r)
+			conf = metric.confusion(logits, batch.labels)
+			a, p, r = rolling(
+				conf.accuracy,
+				conf.precision,
+				conf.recall
+			)
+
+			accuracies.append(a)
+			precisions.append(p)
+			recalls.append(r)
+			bar.set_postfix(a=a, p=p, r=r)
+
+	final_accuracy = sum(accuracies) / len(accuracies)
+	final_precision = sum(precisions) / len(precisions)
+	final_recall = sum(recalls) / len(recalls)
+
+	print(f"Acc:{final_accuracy:.4f}, Precision:{final_precision:.4f}, Recall:{final_recall:.4f}\n")
 
 
 if __name__ == "__main__":

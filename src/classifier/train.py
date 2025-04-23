@@ -1,3 +1,5 @@
+import json
+
 import torch
 from torch import nn
 from torch import optim
@@ -26,6 +28,8 @@ def main():
 	optimizer = optim.Adam(model.parameters(), Config.lr)
 	criterion = nn.BCEWithLogitsLoss()
 
+	log_file = open("cls-log.json", "w")
+
 	bar = tqdm(dataloader)
 	rolling = RollingMean(Config.rolling_n)
 
@@ -43,9 +47,18 @@ def main():
 		a, p, r = rolling(conf.accuracy, conf.precision, conf.recall)
 
 		bar.set_postfix(a=a, p=p, r=r)
+		log = {
+			"acc": a,
+			"loss": loss.item(),
+			"precision": p,
+			"recall": r,
+		}
+		log_file.write(json.dumps(log) + "\n")
+		log_file.flush()
 
-	torch.save(model.state_dict(), "classifier.pth")
+	torch.save(model.state_dict(), f"classifier-{i}.pth")
 
+	log_file.close()
 
 if __name__ == "__main__":
 	main()
