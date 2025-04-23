@@ -179,7 +179,7 @@ class ShapleyExplainer:
 			marginal_contributions = preds_with_feature - preds_without_feature
 
 			# Weight by coalition size
-			coalition_sizes = np.sum(coalitions, axis=1)
+			coalition_sizes = np.sum(coalitions_without_feature, axis=1)
 			weights = np.array([
 				self._compute_coalition_weight(size, total_inds_int)
 				for size in coalition_sizes
