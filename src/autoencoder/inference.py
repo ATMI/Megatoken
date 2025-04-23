@@ -51,12 +51,6 @@ def inference(
 
 	memory, tokens = get_memory(model, tokenizer, text, device, return_tokens=True)
 
-	print("Initial length:", tokens.size(1))
-	out_size = (memory.gate_mask.exp() != 0).sum().item()
-	ratio = out_size / tokens.size(1)
-	print(f"Compression rate: {ratio:.2f}")
-	print("Output size:", out_size)
-
 	out = tokens[0][:Config.decoder_visibility].unsqueeze(0)
 
 	while True:
@@ -88,9 +82,16 @@ def inference(
 			break
 
 	output = tokenizer.decode(out.squeeze())
-	print("")
 	print("Initial text:\n", text, sep="")
 	print("Predicted:\n", output, sep="")
+	print("")
+
+	print("Initial length:", tokens.size(1))
+	out_size = (memory.gate_mask.exp() != 0).sum().item()
+	ratio = out_size / tokens.size(1)
+	print(f"Compression rate: {ratio:.2f}")
+	print("Output size:", out_size)
+
 	print("=" * 50)
 
 
