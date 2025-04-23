@@ -134,7 +134,7 @@ class ShapleyExplainer:
 				memory_attn_scores=False,
 			)
 
-			logits = result.logits[:, -1, :]
+			logits = result[1][:, -1, :]
 			prediction = torch.argmax(logits, dim=-1).unsqueeze(0)
 			tokens = torch.cat((tokens, prediction), dim=-1)
 
@@ -241,9 +241,10 @@ class ShapleyExplainer:
 		result = self.model.decode(
 			memory=Model.Memory(
 				pad_mask=self.memory.pad_mask.repeat(batch_size, 1),
-				gate_mask=modified_gate_mask,
+				gate_masks=modified_gate_mask.unsqueeze(0),
 				embeds=self.memory.embeds.repeat(batch_size, 1, 1),
-				volume=self.memory.volume.repeat(batch_size, 1),
+				kv_dim=64,
+				attn_scores=None,
 			),
 			tokens=self.input_ids.repeat(batch_size, 1),
 			pad_mask=torch.ones((batch_size, self.input_ids.shape[1]), dtype=torch.bool).to(self.device),
