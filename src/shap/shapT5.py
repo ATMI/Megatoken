@@ -205,7 +205,7 @@ class ShapleyExplainer:
 		n = total_features
 		s = coalition_size
 
-		binom_coeff = math.comb(n - 1, s - 1)
+		binom_coeff = math.comb(n - 1, s)
 		return 1.0 / (n * binom_coeff)
 
 	def _predict_with_coalition(self, masked_indices):
