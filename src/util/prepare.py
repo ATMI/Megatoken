@@ -28,20 +28,31 @@ def main() -> None:
 
 	def tokenize(batch, idx):
 		tokenizer = AutoTokenizer.from_pretrained(Config.model)
-		tokens = tokenizer(
-			batch["text"],
+		source = tokenizer(
+			batch["article"],
 			padding=False,
 			truncation=True,
 			max_length=Config.max_length,
 			return_attention_mask=False,
 		)
-		tokens = tokens["input_ids"]
+		source = source["input_ids"]
+
+		target = tokenizer(
+			batch["highlights"],
+			padding=False,
+			truncation=True,
+			max_length=Config.max_length,
+			return_attention_mask=False,
+		)
+		target = target["input_ids"]
+
 		return {
 			"id": idx,
-			"tokens": tokens,
+			"source": source,
+			"target": target,
 		}
 
-	ds = datasets.load_dataset(Config.dataset)
+	ds = datasets.load_dataset(Config.dataset, Config.dataset_version)
 	ds = ds.map(tokenize, with_indices=True, batched=True, num_proc=4)
 	ds.save_to_disk("dataset")
 

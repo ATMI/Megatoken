@@ -31,7 +31,7 @@ class Batch:
 	@staticmethod
 	def collate(batch) -> "Batch":
 		ids = [row["id"] for row in batch]
-		tokens = [row["tokens"] for row in batch]
+		tokens = [row["source"] for row in batch]
 		inputs = [torch.tensor(row) for row in tokens]
 		inputs = rnn.pad_sequence(inputs, batch_first=True, padding_value=Config.pad_token)
 

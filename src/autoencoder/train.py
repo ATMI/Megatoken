@@ -34,7 +34,7 @@ def main():
 	optimizer = optim.Adam(model.parameters(), Config.lr)
 	scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=Config.step, gamma=Config.gamma)
 
-	# init = torch.load("checkpoint.pth", map_location=device, weights_only=True)
+	# init = torch.load("0.pth", map_location=device, weights_only=True)
 	# model.load_state_dict(init["model"])
 	# optimizer.load_state_dict(init["optimizer"])
 
@@ -89,10 +89,10 @@ def main():
 			loss_vol = (memory.rel_ratios ** 2).mean()
 			loss_cls = fn.cross_entropy(logits.flatten(0, 1), batch.labels.flatten())
 
-			if step > Config.warmup:
-				loss = loss_cls + 3 * loss_vol
-			else:
+			if step < Config.warmup and epoch < 1:
 				loss = loss_cls
+			else:
+				loss = loss_cls + 3 * loss_vol
 
 			loss.backward()
 			optimizer.step()

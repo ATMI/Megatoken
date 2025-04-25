@@ -2,8 +2,9 @@ from transformers import AutoTokenizer
 
 
 class Config:
-	dataset = "Yelp/yelp_review_full"
 	model = "google/flan-t5-small"
+	dataset = "abisee/cnn_dailymail"
+	dataset_version = "3.0.0"
 
 	vocab_size: int = None
 	max_length: int = None
@@ -15,7 +16,7 @@ class Config:
 	epoch_num = 2
 	lr = 0.0001
 	step = 1
-	gamma = 0.1
+	gamma = 0.9
 	batch_size = 20
 	rolling_n = 10
 
