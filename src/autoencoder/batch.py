@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from functools import partial
-from typing import List
+from typing import List, Tuple
 
 import torch
 from torch import Tensor
@@ -13,38 +13,36 @@ class AutoEncoderBatch:
 	labels: Tensor
 	lengths: Tensor
 
+
 	def to(self, device) -> "AutoEncoderBatch":
 		return AutoEncoderBatch(
 			tokens=self.tokens.to(device),
 			labels=self.labels.to(device),
 			lengths=self.lengths.to(device),
+
 		)
 
 	@staticmethod
 	def collate(
-		batch: List[Tensor],
+		batch: List[Tuple[Tensor, Tensor]],
 		pad_token: int,
 		ign_token: int,
 	) -> "AutoEncoderBatch":
-		tokens = rnn.pad_sequence(
-			batch,
-			batch_first=True,
-			padding_value=pad_token,
-		)
+		batch_size = len(batch)
+		tokens, labels = tuple(map(list, zip(*batch)))
 
-		batch_size = tokens.size(0)
-		lengths = torch.tensor((batch_size,), dtype=torch.long)
-		labels = torch.roll(tokens, -1)
-
+		lengths = torch.empty(batch_size, dtype=torch.long)
 		for i, sample in enumerate(tokens):
-			length = len(sample)
-			lengths[i] = length
-			labels[i, length:] = ign_token
+			lengths[i] = len(sample)
+
+		tokens = rnn.pad_sequence(tokens, batch_first=True, padding_value=pad_token)
+		labels = rnn.pad_sequence(labels, batch_first=True, padding_value=ign_token)
 
 		return AutoEncoderBatch(
 			tokens=tokens,
 			labels=labels,
 			lengths=lengths,
+
 		)
 
 	@staticmethod

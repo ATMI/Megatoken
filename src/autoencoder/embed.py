@@ -39,7 +39,7 @@ def main():
 	for batch in tqdm(dataloader):
 		batch = batch.to(device)
 		result = model.encode(
-			tokens=batch.tokens,
+			src_tokens=batch.tokens,
 			eos_mask=batch.eos_mask,
 			pad_mask=batch.pad_mask,
 			attn_mask=None,

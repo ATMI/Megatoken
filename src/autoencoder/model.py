@@ -5,16 +5,16 @@ from typing import Tuple
 import torch
 from torch import nn, Tensor
 from torch.nn import functional as fn
-from transformers import T5ForConditionalGeneration
+from transformers import T5ForConditionalGeneration, AutoTokenizer
 
 
-class Gate(nn.Module):
+class Prune(nn.Module):
 	def __init__(
 		self,
 		bias: float,
 		temperature: float,
 	):
-		super(Gate, self).__init__()
+		super(Prune, self).__init__()
 		self.bias = bias
 		self.temperature = temperature
 
@@ -41,203 +41,218 @@ class Gate(nn.Module):
 class AutoEncoder(nn.Module):
 	@dataclass
 	class Memory:
-		kv_dim: int | None
-
 		embeds: Tensor
-		pad_mask: Tensor
+		prune_masks: Tensor
+		prune_probs: Tensor
 
-		gate_masks: Tensor | None
-		attn_scores: Tensor | None
+	@property
+	def name(self) -> str:
+		return self.t5.config.name_or_path
 
-		def gate_to_length(self, mask: Tensor) -> Tensor:
-			length = (mask / math.sqrt(self.kv_dim)).exp()
-			length = (length * self.pad_mask).sum(dim=-1)
-			return length
+	@property
+	def kv_dim(self) -> int:
+		return self.t5.config.d_kv
 
-		def __post_init__(self):
-			# TODO: fix kolhoz
-			if self.gate_masks is None:
-				return
+	@property
+	def max_length(self) -> int:
+		return self.t5.config.n_positions
 
-			after_gates = self.gate_masks
-			prior_gates = torch.zeros_like(after_gates[0]).unsqueeze(0)
-			prior_gates = torch.cat((prior_gates, after_gates[:-1]), dim=0)
+	@property
+	def head_num(self) -> int:
+		return self.t5.config.num_heads
 
-			prior_lengths = self.gate_to_length(prior_gates)
-			after_lengths = self.gate_to_length(after_gates)
+	@property
+	def encoder_num(self) -> int:
+		return len(self.t5.encoder.block)
 
-			self.lengths = after_lengths
-			self.rel_ratios = after_lengths / prior_lengths
-			self.abs_ratios = after_lengths[-1] / prior_lengths[0]
+	@property
+	def pad_token(self) -> int:
+		return self.tokenizer.pad_token_id
 
-		@property
-		def gate_mask(self) -> Tensor:
-			if self.gate_masks is None:
-				return None
-			return self.gate_masks[-1]
+	@property
+	def ign_token(self) -> int:
+		return -100
+
+	@staticmethod
+	def decoder_mask(max_length: int, visibility: int) -> Tensor:
+		mask = torch.full((max_length, max_length), -torch.inf)
+		for i in range(max_length):
+			mask[i, max(0, i - visibility): i + 1] = 0
+		return mask
+
+	@staticmethod
+	def pad_mask(
+		indices: int | Tensor,
+		lengths: Tensor,
+		real: bool,
+	) -> Tensor:
+		if isinstance(indices, int):
+			indices = torch.arange(indices, device=lengths.device)
+		mask = indices.unsqueeze(0) < lengths.unsqueeze(1)
+		mask = torch.where(mask, 0, -torch.inf) if real else mask
+		return mask
 
 	def __init__(
 		self,
 		name: str,
+		visibility: int,
 		bias: float,
 		temperature: float,
 	):
 		super(AutoEncoder, self).__init__()
+		self.tokenizer = AutoTokenizer.from_pretrained(name)
 		self.t5 = T5ForConditionalGeneration.from_pretrained(name)
 
-		self.head_num = self.t5.config.num_heads
-		self.attn_num = len(self.t5.encoder.block)
-		self.gate_num = self.attn_num
-
-		self.gates = nn.ModuleList(
-			Gate(bias, temperature) for _ in range(self.gate_num)
-		)
+		self.prune_layers = nn.ModuleList(Prune(bias, temperature) for _ in range(self.encoder_num))
+		self.decoder_mask = AutoEncoder.decoder_mask(self.max_length, visibility)
 
 	def encode(
 		self,
-		tokens: Tensor,
-		lengths: Tensor,
+		src_tokens: Tensor,
+		src_lengths: Tensor,
 	) -> Memory:
-		device = tokens.device
-		batch_size = tokens.size(0)
-		max_length = tokens.size(1)
+		device = src_tokens.device
+		batch_size = src_tokens.size(0)
+		max_length = src_tokens.size(1)
 
-		indices = torch.arange(max_length, device=device)
-		attn_mask = indices[None, :]
-		attn_mask = attn_mask < lengths
+		batch_indices = torch.arange(batch_size, device=device)
+		token_indices = torch.arange(max_length, device=device)
 
-		gate_masks = (self.gate_num, batch_size, max_length)
-		gate_masks = torch.zeros(gate_masks, device=device)
+		pad_mask = AutoEncoder.pad_mask(token_indices, src_lengths, False)
+		attn_mask = torch.where(pad_mask, 0, -torch.inf)
+		attn_mask = attn_mask.unsqueeze(1).unsqueeze(1)
+
+		prune_masks = (batch_size, self.encoder_num, max_length)
+		prune_masks = torch.zeros(prune_masks, device=device)
+		prune_probs = torch.zeros((batch_size, self.encoder_num, max_length), device=device)
+		prune_keep = (torch.rand(batch_size, device=device) * src_lengths).long()
 
 		# Kinda strange variable with cache disabled,
 		# but it's used to calculate the position bias
 		# in HF spaghetti. Trust me :)
-		embeds = self.t5.encoder.embed_tokens(tokens)
+		embeds = self.t5.encoder.embed_tokens(src_tokens)
 		embeds = self.t5.encoder.dropout(embeds)
 
 		for i, encoder_layer in enumerate(self.t5.encoder.block):
 			embeds[:, :, 0] = 0.0
 			embeds, attn_mask = encoder_layer(
 				hidden_states=embeds,
-				cache_position=indices,
+				cache_position=token_indices,
 				attention_mask=attn_mask,
 				position_bias=attn_mask if i > 0 else None,
 				output_attentions=False,
 			)
 
-			gate_layer = self.gates[i]
-			gate = gate_layer(embeds=embeds)
-			gate_masks[i] = gate if i == 0 else gate + gate_masks[i - 1]
+			prune_layer = self.prune_layers[i]
+			prune_mask = prune_layer(embeds=embeds)
+			prune_mask = prune_mask + prune_masks[:, i - 1] if i else prune_mask
+			prune_mask[batch_indices, prune_keep] = 0.0
+			prune_masks[:, i] = prune_mask
 
-			gate = gate.unsqueeze(1) + gate.unsqueeze(2)
-			attn_mask = attn_mask + gate.unsqueeze(1)
-			attn_mask[:, :, indices, indices] = 0.0
+			prune_prob = (prune_mask / math.sqrt(self.kv_dim)).exp()
+			prune_prob = (prune_prob * pad_mask)
+			prune_probs[:, i] = prune_prob
+
+			prune_mask = prune_mask.unsqueeze(1) + prune_mask.unsqueeze(2)
+			attn_mask = attn_mask + prune_mask.unsqueeze(1)
+			attn_mask[:, :, token_indices, token_indices] = 0.0
 
 		embeds = self.t5.encoder.final_layer_norm(embeds)
 		embeds = self.t5.encoder.dropout(embeds)
 
 		return AutoEncoder.Memory(
-			kv_dim=self.t5.config.d_kv,
-
 			embeds=embeds,
-			pad_mask=pad_mask,
-
-			gate_masks=gate_masks,
-			attn_scores=attn_scores,
+			prune_masks=prune_masks,
+			prune_probs=prune_probs,
 		)
 
 	def decode(
 		self,
-		memory: Memory,
-		tokens: Tensor,
-		pad_mask: Tensor | None,
-		attn_mask: Tensor | None,
+		mem_embeds: Tensor,
+		mem_lengths: Tensor,
+		mem_mask: Tensor | None,
+
+		tgt_tokens: Tensor,
+		tgt_lengths: Tensor,
 	):
 		# Code here is similar to encode in some parts,
 		# maybe it worth to do something with it or not :)
-		device = tokens.device
-		batch_size = tokens.size(0)
-		input_length = tokens.size(1)
+		device = mem_embeds.device
+		batch_size = mem_embeds.size(0)
 
-		if attn_mask is None:
-			mask_size = (batch_size, input_length, input_length)
-			attn_mask = torch.full(mask_size, -torch.inf, device=device)
-			attn_mask = attn_mask.triu(diagonal=1)
+		mem_indices = torch.arange(mem_embeds.size(1), device=device)
+		tgt_indices = torch.arange(tgt_tokens.size(1), device=device)
 
-		if pad_mask is not None:
-			mask = torch.where(pad_mask, 0, -torch.inf)
-			attn_mask = attn_mask + mask.unsqueeze(1)
+		tgt_attn_mask = AutoEncoder.pad_mask(tgt_indices, mem_lengths, True)
+		mem_attn_mask = AutoEncoder.pad_mask(mem_indices, mem_lengths, True)
 
-		self_attn_mask = attn_mask.unsqueeze(1)
-		cross_attn_mask = torch.where(memory.pad_mask, 0, -torch.inf)
+		mem_attn_mask = mem_attn_mask + mem_mask
+		mem_attn_mask = mem_attn_mask.unsqueeze(1).unsqueeze(1)
 
-		# TODO: normal fix
-		if memory.gate_mask is not None:
-			cross_attn_mask = cross_attn_mask + memory.gate_mask
-		cross_attn_mask = cross_attn_mask[:, None, None, :]
+		if self.decoder_mask.device != device:
+			self.decoder_mask = self.decoder_mask.to(device)
 
-		cache_position = torch.arange(input_length, device=device)
-		input_embeds = self.t5.decoder.embed_tokens(tokens)
-		input_embeds = self.t5.decoder.dropout(input_embeds)
+		decoder_mask = self.decoder_mask.unsqueeze(0)
+		tgt_attn_mask = tgt_attn_mask.unsqueeze(1)
+		tgt_attn_mask = tgt_attn_mask + decoder_mask
+		for i in range(batch_size):
+			tgt_attn_mask[i, tgt_lengths[i]:, 0] = 0
+		tgt_attn_mask = tgt_attn_mask.unsqueeze(1)
+
+		tgt_embeds = self.t5.decoder.embed_tokens(tgt_tokens)
+		tgt_embeds = self.t5.decoder.dropout(tgt_embeds)
 
 		for i, decoder_layer in enumerate(self.t5.decoder.block):
 			self_attn, cross_attn, fc = decoder_layer.layer
 
-			input_embeds, _, self_attn_mask = self_attn(
-				hidden_states=input_embeds,
-				cache_position=cache_position,
-				attention_mask=self_attn_mask,
-				position_bias=self_attn_mask if i > 0 else None,
-				# position_bias=None,
+			tgt_embeds, _, tgt_attn_mask = self_attn(
+				hidden_states=tgt_embeds,
+				cache_position=tgt_indices,
+				attention_mask=tgt_attn_mask,
+				position_bias=tgt_attn_mask if i > 0 else None,
 			)
 
-			input_embeds, _, cross_attn_mask = cross_attn(
-				hidden_states=input_embeds,
-				key_value_states=memory.embeds,
-				cache_position=cache_position,
-				attention_mask=cross_attn_mask,
-				position_bias=cross_attn_mask if i > 0 else None,
-				# position_bias=None,
+			tgt_embeds, _, mem_attn_mask = cross_attn(
+				hidden_states=tgt_embeds,
+				key_value_states=mem_embeds,
+				cache_position=mem_indices,
+				attention_mask=mem_attn_mask,
+				position_bias=mem_attn_mask if i > 0 else None,
 			)
 
-			input_embeds = fc(input_embeds)
+			tgt_embeds = fc(tgt_embeds)
 
-		input_embeds = self.t5.decoder.final_layer_norm(input_embeds)
-		input_embeds = self.t5.decoder.dropout(input_embeds)
+		tgt_embeds = self.t5.decoder.final_layer_norm(tgt_embeds)
+		tgt_embeds = self.t5.decoder.dropout(tgt_embeds)
 
 		if self.t5.config.tie_word_embeddings:
-			input_embeds = input_embeds * (self.t5.model_dim ** -0.5)
+			tgt_embeds = tgt_embeds * (self.t5.model_dim ** -0.5)
 
-		logits = self.t5.lm_head(input_embeds)
+		logits = self.t5.lm_head(tgt_embeds)
 		return logits
 
 	def forward(
 		self,
-		memory_tokens: Tensor,
-		memory_eos_mask: Tensor,
-		memory_pad_mask: Tensor | None,
-		memory_attn_mask: Tensor | None,
-		memory_attn_scores: bool,
+		src_tokens: Tensor,
+		src_lengths: Tensor,
 
-		input_tokens: Tensor,
-		input_pad_mask: Tensor | None,
-		input_attn_mask: Tensor | None,
+		tgt_tokens: Tensor,
+		tgt_lengths: Tensor,
 	) -> Tuple[Memory, Tensor]:
 		# Encode
-		memory = self.encode(
-			tokens=memory_tokens,
-			eos_mask=memory_eos_mask,
-			pad_mask=memory_pad_mask,
-			attn_mask=memory_attn_mask,
-			attn_scores=memory_attn_scores,
+		mem = self.encode(
+			src_tokens=src_tokens,
+			src_lengths=src_lengths,
 		)
 
 		# Decode
-		logits = self.decode(
-			memory=memory,
-			tokens=input_tokens,
-			pad_mask=input_pad_mask,
-			attn_mask=input_attn_mask,
+		tgt_logits = self.decode(
+			mem_embeds=mem.embeds,
+			mem_lengths=src_lengths,
+			mem_mask=mem.prune_masks[:, -1],
+
+			tgt_tokens=tgt_tokens,
+			tgt_lengths=tgt_lengths,
 		)
 
-		return memory, logits
+		return mem, tgt_logits

@@ -5,9 +5,15 @@ import datasets
 import torch
 from torch.utils import data
 from transformers import AutoTokenizer
+import logging
+
+logging.getLogger("transformers.tokenization_utils").setLevel(logging.ERROR)
 
 
 class AutoEncoderDataset(data.Dataset):
+	MIN_LENGTH = 16
+	MAX_LENGTH = 10_000
+
 	@staticmethod
 	def tokenize(
 		tokenizer: str,
@@ -21,17 +27,22 @@ class AutoEncoderDataset(data.Dataset):
 		batch = tokenizer(
 			text=batch,
 			padding=False,
-			truncation=False,
-			add_special_tokens=False,
+			truncation=True,
+			max_length=AutoEncoderDataset.MAX_LENGTH,
+			add_special_tokens=True,
 			return_attention_mask=False,
 		)
 
 		max_length = tokenizer.model_max_length
+		batch = batch["input_ids"]
 		result = []
 
 		for row in batch:
-			for i in range(len(row), max_length):
-				result.append(row[i: i + max_length])
+			for start in range(0, len(row), max_length):
+				chunk = row[start: start + max_length]
+				if len(chunk) < AutoEncoderDataset.MIN_LENGTH:
+					continue
+				result.append(chunk)
 
 		return {
 			"tokens": result,
@@ -44,20 +55,20 @@ class AutoEncoderDataset(data.Dataset):
 		split: str,
 
 		tokenizer: str,
+		ign_token: int,
 		text_column: str,
 	):
 		dataset = datasets.load_dataset(name, version, split=split)
 		columns = list(dataset.column_names)
 		dataset = dataset.map(
-			function=partial(
-				AutoEncoderDataset.tokenize,
-				tokenizer=tokenizer,
-				text_column=text_column,
-			),
+			function=partial(AutoEncoderDataset.tokenize, tokenizer, text_column),
 			batched=True,
-			with_indices=True,
 			remove_columns=columns,
 		)
+
+		tokenizer = AutoTokenizer.from_pretrained(tokenizer)
+		self.eos_token = tokenizer.eos_token_id
+		self.ign_token = ign_token
 		self.dataset = dataset
 
 	def __len__(self):
@@ -65,6 +76,15 @@ class AutoEncoderDataset(data.Dataset):
 
 	def __getitem__(self, index):
 		sample = self.dataset[index]
-		sample = sample["tokens"]
-		sample = torch.tensor(sample)
-		return sample
+		tokens = sample["tokens"]
+		labels = tokens[1:]
+
+		if tokens[-1] == self.eos_token:
+			tokens.pop()
+		else:
+			labels.append(self.ign_token)
+
+		tokens = torch.tensor(tokens)
+		labels = torch.tensor(labels)
+
+		return tokens, labels

@@ -1,5 +1,7 @@
+import os
 import signal
 
+import torch
 from torch import optim
 from torch.nn import functional as fn
 from torch.utils import data
@@ -23,14 +25,18 @@ def interrupt(_, __):
 
 
 def main():
-	prepare_random()
-	device = prepare_device()
+	# os.environ["HF_DATASETS_OFFLINE"] = "1"
+	# os.environ["HF_HUB_OFFLINE"] = "1"
 
 	epoch_num = 2
 	warmup = 500
 
+	prepare_random()
+	device = prepare_device()
+
 	model = AutoEncoder(
 		name="google/flan-t5-small",
+		visibility=5,
 		bias=5,
 		temperature=0.1,
 	).to(device)
@@ -40,6 +46,7 @@ def main():
 		split="train",
 		text_column="article",
 		tokenizer=model.name,
+		ign_token=model.ign_token,
 	)
 	dataloader = data.DataLoader(
 		dataset=dataset,
@@ -47,7 +54,7 @@ def main():
 		shuffle=True,
 		collate_fn=AutoEncoderBatch.collate_fn(
 			pad_token=model.pad_token,
-			ign_token=-100,
+			ign_token=model.ign_token,
 		),
 	)
 	optimizer = optim.Adam(
@@ -84,23 +91,21 @@ def main():
 			optimizer.zero_grad()
 
 			batch = batch.to(device)
-			memory, logits = model.forward(
-				memory_tokens=batch.tokens,
-				memory_eos_mask=batch.eos_mask,
-				memory_pad_mask=batch.pad_mask,
-				memory_attn_mask=None,
-				memory_attn_scores=False,
+			mem, tgt = model.forward(
+				src_tokens=batch.tokens,
+				src_lengths=batch.lengths,
 
-				input_tokens=batch.tokens,
-				input_pad_mask=batch.pad_mask,
-				input_attn_mask=batch.decoder_mask,
+				tgt_tokens=batch.tokens,
+				tgt_lengths=batch.lengths,
 			)
 
-			loss_vol = (memory.rel_ratios ** 2).mean()
-			loss_cls = fn.cross_entropy(
-				logits.flatten(0, 1),
-				batch.labels.flatten()
-			)
+			prune_lengths = mem.prune_probs.sum(dim=2)
+			prune_ratios = torch.roll(prune_lengths, 1)
+			prune_ratios[:, 0] = batch.lengths
+			prune_ratios = prune_lengths / prune_ratios
+
+			loss_vol = (prune_ratios ** 2).mean()
+			loss_cls = fn.cross_entropy(tgt.flatten(0, 1), batch.labels.flatten())
 
 			if step < warmup and epoch < 1:
 				loss = loss_cls
@@ -114,9 +119,10 @@ def main():
 			loss_cls = loss_cls.item()
 			loss = loss.item()
 
-			acc = accuracy(logits, batch.labels, batch.ignore_token)
-			abs_comp = memory.abs_ratios.mean().item()
-			rel_comp = memory.rel_ratios.mean(dim=1).tolist()
+			acc = accuracy(tgt, batch.labels, model.ign_token)
+			abs_comp = prune_lengths[:, -1] / batch.lengths
+			abs_comp = abs_comp.mean().item()
+			rel_comp = prune_ratios.mean(dim=0).tolist()
 
 			postfix = log(acc, abs_comp, rel_comp, loss, loss_cls, loss_vol)
 			bar.set_postfix(postfix)
