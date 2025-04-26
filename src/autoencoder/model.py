@@ -40,12 +40,12 @@ class Gate(nn.Module):
 class Model(nn.Module):
 	@dataclass
 	class Memory:
-		kv_dim: int
+		kv_dim: int | None
 
 		embeds: Tensor
 		pad_mask: Tensor
 
-		gate_masks: Tensor
+		gate_masks: Tensor | None
 		attn_scores: Tensor | None
 
 		def gate_to_length(self, mask: Tensor) -> Tensor:
@@ -54,6 +54,10 @@ class Model(nn.Module):
 			return length
 
 		def __post_init__(self):
+			# TODO: fix kolhoz
+			if self.gate_masks is None:
+				return
+
 			after_gates = self.gate_masks
 			prior_gates = torch.zeros_like(after_gates[0]).unsqueeze(0)
 			prior_gates = torch.cat((prior_gates, after_gates[:-1]), dim=0)
@@ -67,6 +71,8 @@ class Model(nn.Module):
 
 		@property
 		def gate_mask(self) -> Tensor:
+			if self.gate_masks is None:
+				return None
 			return self.gate_masks[-1]
 
 	def __init__(
@@ -186,7 +192,10 @@ class Model(nn.Module):
 
 		self_attn_mask = attn_mask.unsqueeze(1)
 		cross_attn_mask = torch.where(memory.pad_mask, 0, -torch.inf)
-		cross_attn_mask = cross_attn_mask + memory.gate_mask
+
+		# TODO: normal fix
+		if memory.gate_mask is not None:
+			cross_attn_mask = cross_attn_mask + memory.gate_mask
 		cross_attn_mask = cross_attn_mask[:, None, None, :]
 
 		cache_position = torch.arange(input_length, device=device)

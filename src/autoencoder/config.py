@@ -10,10 +10,11 @@ class Config:
 	max_length: int = None
 	mask_token: int = None
 	pad_token: int = None
+	eos_token: int = None
 	ignore_token = -100
 
 	seed = 42
-	epoch_num = 2
+	epoch_num = 3
 	lr = 0.0001
 	step = 1
 	gamma = 0.9
@@ -30,4 +31,5 @@ tokenizer = AutoTokenizer.from_pretrained(Config.model)
 Config.vocab_size = tokenizer.vocab_size
 Config.max_length = tokenizer.model_max_length
 Config.pad_token = tokenizer.pad_token_id
+Config.eos_token = tokenizer.eos_token_id
 Config.mask_token = tokenizer.mask_token_id

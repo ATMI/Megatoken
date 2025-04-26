@@ -64,8 +64,8 @@ def main():
 		ax2.plot(x, r)
 	ax2.plot(x, comp)
 
-	ax1.set_xlim(0, 32500)
-	ax2.set_xlim(0, 32500)
+	ax1.set_xlim(0, 3 * 14356)
+	ax2.set_xlim(0, 3 * 14356)
 
 	ax1.legend(loc="lower left")
 	# ax2.legend(loc="upper right")
