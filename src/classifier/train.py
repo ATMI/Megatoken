@@ -14,7 +14,7 @@ from ..util.metric import RollingMean
 
 
 def main():
-	prepare.rnd(Config.seed)
+	prepare.prepare_random(Config.seed)
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	dataset = Dataset("train")

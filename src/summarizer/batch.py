@@ -6,12 +6,12 @@ from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 
 from ..autoencoder.config import Config
-from ..autoencoder.model import Model
+from ..autoencoder.autoencoder import AutoEncoder
 
 
 @dataclass
 class Batch:
-	memory: Model.Memory
+	memory: AutoEncoder.Memory
 	target: Tensor
 	target_mask: Tensor
 	labels: Tensor
@@ -19,7 +19,7 @@ class Batch:
 
 	def to(self, device) -> "Batch":
 		return Batch(
-			memory=Model.Memory(
+			memory=AutoEncoder.Memory(
 				embeds=self.memory.embeds.to(device),
 				pad_mask=self.memory.pad_mask.to(device),
 
@@ -54,7 +54,7 @@ class Batch:
 			memory_mask[row, len(memory[row]):] = 0
 			target_mask[row, len(target[row]):] = 0
 
-		memory = Model.Memory(
+		memory = AutoEncoder.Memory(
 			embeds=memory_tensor,
 			pad_mask=memory_mask,
 

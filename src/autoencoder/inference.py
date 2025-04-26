@@ -4,7 +4,7 @@ import torch
 from transformers import AutoTokenizer, T5Tokenizer
 
 from .config import Config
-from .model import Model
+from .autoencoder import AutoEncoder
 
 
 def inference(
@@ -88,7 +88,7 @@ def main():
 	tokenizer = AutoTokenizer.from_pretrained(Config.model)
 	checkpoint = torch.load(args.checkpoint, weights_only=True)
 
-	model = Model(Config.model, Config.bias, Config.temperature)
+	model = AutoEncoder(Config.model, Config.bias, Config.temperature)
 	model.load_state_dict(checkpoint["model"])
 
 	while True:

@@ -5,7 +5,7 @@ from transformers import AutoTokenizer
 import networkx as nx
 import matplotlib.pyplot as plt
 
-from ..autoencoder.model import Model
+from ..autoencoder.autoencoder import AutoEncoder
 from ..autoencoder.config import Config
 
 

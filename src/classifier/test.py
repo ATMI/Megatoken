@@ -15,7 +15,7 @@ from ..util.metric import RollingMean
 
 
 def main():
-	prepare.rnd(Config.seed)
+	prepare.prepare_random(Config.seed)
 	args = argparse.ArgumentParser()
 	args.add_argument("checkpoint")
 	args = args.parse_args()

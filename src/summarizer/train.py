@@ -10,13 +10,13 @@ from tqdm import tqdm
 from .dataset import Dataset
 from .batch import Batch
 from ..autoencoder.config import Config
-from ..autoencoder.model import Model
+from ..autoencoder.autoencoder import AutoEncoder
 from ..util.metric import RollingMean, accuracy
 from ..util import prepare
 
 
 def main():
-	prepare.rnd(Config.seed)
+	prepare.prepare_random(Config.seed)
 
 	dataset = datasets.load_from_disk("dataset")
 	dataset = dataset["train"]
@@ -30,7 +30,7 @@ def main():
 	)
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	model = Model(Config.model, Config.bias, Config.temperature)
+	model = AutoEncoder(Config.model, Config.bias, Config.temperature)
 	model = model.to(device)
 
 	params = set()

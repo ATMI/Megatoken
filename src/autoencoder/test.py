@@ -41,12 +41,12 @@ def run(
 			batch = batch.to(device)
 			with torch.no_grad():
 				result = model.forward(
-					memory_tokens=batch.inputs,
+					memory_tokens=batch.tokens,
 					memory_eos_mask=batch.eos_mask,
 					memory_pad_mask=batch.pad_mask,
 					memory_attn_mask=None,
 
-					input_tokens=batch.inputs,
+					input_tokens=batch.tokens,
 					input_pad_mask=batch.pad_mask,
 					input_attn_mask=batch.decoder_mask,
 				)

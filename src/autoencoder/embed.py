@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 from .batch import Batch
 from .config import Config
-from .model import Model
+from .autoencoder import AutoEncoder
 from ..util import prepare
 from ..util.tensorfile import TensorWriter
 
@@ -18,7 +18,7 @@ def main():
 	args = args.parse_args()
 
 	torch.set_grad_enabled(False)
-	prepare.rnd(Config.seed)
+	prepare.prepare_random(Config.seed)
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	dataset = prepare.dataset()
@@ -28,7 +28,7 @@ def main():
 		collate_fn=Batch.collate,
 	)
 
-	model = Model(Config.model, Config.bias, Config.temperature)
+	model = AutoEncoder(Config.model, Config.bias, Config.temperature)
 	model = model.eval()
 	model = model.to(device)
 
@@ -39,7 +39,7 @@ def main():
 	for batch in tqdm(dataloader):
 		batch = batch.to(device)
 		result = model.encode(
-			tokens=batch.inputs,
+			tokens=batch.tokens,
 			eos_mask=batch.eos_mask,
 			pad_mask=batch.pad_mask,
 			attn_mask=None,

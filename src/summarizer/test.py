@@ -7,18 +7,18 @@ from transformers import AutoTokenizer
 from .batch import Batch
 from .dataset import Dataset
 from ..autoencoder.config import Config
-from ..autoencoder.model import Model
+from ..autoencoder.autoencoder import AutoEncoder
 from ..util import prepare
 
 text = "(CNN) -- Authorities have seized more than 1,000 pirate costumes made in China and destined for sale in Washington state because they contained high levels of lead, officials said. Shipments worth $10,000 were on the way to a distributor in Seattle when they were seized by U.S. customs officials. The Consumer Product Safety Commission found the costumes contained more than 11 times the allowable level of lead. Officials did not specify when the seizures occurred but said the tainted products will be destroyed."
 
 
 def main():
-	prepare.rnd(Config.seed)
+	prepare.prepare_random(Config.seed)
 	torch.set_grad_enabled(False)
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-	model = Model(Config.model, Config.bias, Config.temperature)
+	model = AutoEncoder(Config.model, Config.bias, Config.temperature)
 	model.eval()
 	# model = model.to(device)
 
@@ -107,7 +107,7 @@ def main():
 				tokens = tokens[mask]
 
 				memory = batch.memory
-				memory = Model.Memory(
+				memory = AutoEncoder.Memory(
 					embeds=memory.embeds[mask],
 					pad_mask=memory.pad_mask[mask],
 					kv_dim=None,
