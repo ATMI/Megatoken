@@ -13,13 +13,11 @@ class AutoEncoderBatch:
 	labels: Tensor
 	lengths: Tensor
 
-
 	def to(self, device) -> "AutoEncoderBatch":
 		return AutoEncoderBatch(
 			tokens=self.tokens.to(device),
 			labels=self.labels.to(device),
 			lengths=self.lengths.to(device),
-
 		)
 
 	@staticmethod
@@ -42,7 +40,6 @@ class AutoEncoderBatch:
 			tokens=tokens,
 			labels=labels,
 			lengths=lengths,
-
 		)
 
 	@staticmethod

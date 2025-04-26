@@ -1,4 +1,3 @@
-import os
 import signal
 
 import torch
@@ -7,11 +6,11 @@ from torch.nn import functional as fn
 from torch.utils import data
 from tqdm import tqdm
 
+from .batch import AutoEncoderBatch
 from .checkpoint import AutoEncoderCheckpoint
 from .dataset import AutoEncoderDataset
-from .batch import AutoEncoderBatch
-from .model import AutoEncoder
 from .log import AutoEncoderLog
+from .model import AutoEncoder
 
 from ..util.metric import accuracy
 from ..util.prepare import prepare_random, prepare_device
@@ -25,9 +24,6 @@ def interrupt(_, __):
 
 
 def main():
-	# os.environ["HF_DATASETS_OFFLINE"] = "1"
-	# os.environ["HF_HUB_OFFLINE"] = "1"
-
 	epoch_num = 2
 	warmup = 500
 

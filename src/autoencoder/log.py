@@ -31,8 +31,8 @@ class AutoEncoderLog:
 		self.file.write("\n")
 
 		return {
-			"acc": f"{acc:.2f}",
-			"com": f"{abs_comp:.2f}",
+			"acc": f"{acc * 100:.2f}",
+			"com": f"{abs_comp * 100:.2f}",
 			"cls": f"{loss_cls:.2f}",
 			"vol": f"{loss_vol:.2f}",
 		}
