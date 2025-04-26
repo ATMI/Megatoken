@@ -29,6 +29,7 @@ class AutoEncoderLog:
 
 		json.dump(log, self.file)
 		self.file.write("\n")
+		self.file.flush()
 
 		return {
 			"acc": f"{acc * 100:.2f}",

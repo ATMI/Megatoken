@@ -37,7 +37,7 @@ class AutoEncoderCheckpoint:
 			return
 		self.step = step
 
-		file = f"autoencoder_{epoch:2d}_{step:4d}.pth"
+		file = f"autoencoder_{epoch:02d}_{step:05d}.pth"
 		state = {
 			"epoch": epoch,
 			"step": step,

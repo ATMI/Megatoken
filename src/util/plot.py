@@ -24,8 +24,7 @@ def load(path: str) -> Tuple[int, Dict[str, List[float]]]:
 
 def main():
 	start = time()
-	x, data = load("log.json")
-	# x, data = load("log/a4d2a56656e1a1e4233a3d830cc0617205f467ed.json")
+	x, data = load("autoencoder.log")
 	stop = time()
 	print(stop - start)
 
@@ -36,13 +35,13 @@ def main():
 
 	x = np.arange(x)
 	acc = rolling(data["acc"])
-	comp = rolling(data["comp"])
-	ratio = rolling(data["rat"])
-	ratio = tuple(zip(*ratio))
+	abs_comp = rolling(data["abs_comp"])
+	rel_comp = rolling(data["rel_comp"])
+	rel_comp = tuple(zip(*rel_comp))
 
 	fig, ax1 = plt.subplots()
-	ax1.set_ylim(0, 100)
-	ax1.set_yticks(np.arange(0, 110, 10))
+	ax1.set_ylim(0, 1)
+	ax1.set_yticks(np.arange(0, 1.1, 0.1))
 	ax1.plot(
 		x, acc,
 		label="accuracy",
@@ -53,22 +52,18 @@ def main():
 	ax2.set_ylim(0, 1)
 	ax2.set_yticks(np.arange(0, 1.1, 0.1))
 
-	# ratio = list(zip((*ratio, comp), "cmykcmykr", ["gate 0", "gate 1", "gate 2", "gate 3", "gate 5", "gate 6", "gate 7", "comp"]))
-	# for r, color, label in ratio:
-	# 	ax2.plot(
-	# 		x, r,
-	# 		label=label,
-	# color=color,
-	# )
-	for r in ratio:
-		ax2.plot(x, r)
-	ax2.plot(x, comp)
+	for i, r in enumerate(rel_comp):
+		ax2.plot(x, r, label=f"{i}")
+	ax2.plot(x, abs_comp)
 
-	ax1.set_xlim(0, 3 * 14356)
-	ax2.set_xlim(0, 3 * 14356)
+	# ax1.set_xlim(0, 34254)
+	# ax2.set_xlim(0, 34254)
+
+	ax1.set_xlim(0, 1000)
+	ax2.set_xlim(0, 1000)
 
 	ax1.legend(loc="lower left")
-	# ax2.legend(loc="upper right")
+	ax2.legend(loc="upper right")
 
 	plt.grid(True)
 	plt.show()

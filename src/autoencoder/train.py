@@ -71,7 +71,7 @@ def main():
 		optimizer=optimizer,
 		scheduler=scheduler,
 		dataloader=dataloader,
-		freq_step=5000,
+		freq_step=1000,
 		limit=2,
 	)
 
