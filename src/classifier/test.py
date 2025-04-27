@@ -39,7 +39,7 @@ def main():
 
 	for batch in bar:
 		batch = batch.to(device)
-		logits = model.forward(batch.embeds, batch.indices)
+		logits = model.forward(batch.input_embeds, batch.indices)
 
 		conf = metric.confusion(logits, batch.target)
 		a, p, r = rolling(conf.accuracy, conf.precision, conf.recall)

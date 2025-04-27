@@ -37,7 +37,7 @@ def main():
 			optimizer.zero_grad()
 
 			batch = batch.to(device)
-			logits = model.forward(batch.embeds, batch.indices)
+			logits = model.forward(batch.input_embeds, batch.indices)
 
 			loss = criterion(logits, batch.target.float())
 			loss.backward()

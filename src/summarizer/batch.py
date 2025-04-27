@@ -20,7 +20,7 @@ class Batch:
 	def to(self, device) -> "Batch":
 		return Batch(
 			memory=AutoEncoder.Memory(
-				embeds=self.memory.embeds.to(device),
+				embeds=self.memory.input_embeds.to(device),
 				pad_mask=self.memory.pad_mask.to(device),
 
 				kv_dim=None,

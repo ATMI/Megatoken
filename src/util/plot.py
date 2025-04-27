@@ -29,7 +29,7 @@ def main():
 	print(stop - start)
 
 	def rolling(values):
-		mean = RollingMean(100)
+		mean = RollingMean(1000)
 		mean = [mean(v) for v in values]
 		return mean
 
@@ -56,8 +56,8 @@ def main():
 		ax2.plot(x, r, label=f"{i}")
 	ax2.plot(x, abs_comp, label="total")
 
-	ax1.set_xlim(0, 34254)
-	ax2.set_xlim(0, 34254)
+	ax1.set_xlim(0, 2 * 34254)
+	ax2.set_xlim(0, 2 * 34254)
 
 	# ax1.set_xlim(0, 1000)
 	# ax2.set_xlim(0, 1000)

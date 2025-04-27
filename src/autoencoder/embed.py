@@ -47,7 +47,7 @@ def main():
 		)
 
 		mask = (result.gate_mask > -1) & result.pad_mask
-		embeds = result.embeds[mask]
+		embeds = result.input_embeds[mask]
 		mask = mask.sum(dim=1)
 
 		embeds = embeds.cpu()

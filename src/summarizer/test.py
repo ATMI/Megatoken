@@ -108,7 +108,7 @@ def main():
 
 				memory = batch.memory
 				memory = AutoEncoder.Memory(
-					embeds=memory.embeds[mask],
+					embeds=memory.input_embeds[mask],
 					pad_mask=memory.pad_mask[mask],
 					kv_dim=None,
 					gate_masks=None,

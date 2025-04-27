@@ -24,6 +24,7 @@ def interrupt(_, __):
 
 
 def main():
+	epoch = 0
 	epoch_num = 2
 	warmup = 500
 
@@ -32,7 +33,6 @@ def main():
 
 	model = AutoEncoder(
 		name="google/flan-t5-small",
-		visibility=5,
 		bias=5,
 		temperature=0.1,
 	).to(device)
@@ -46,9 +46,10 @@ def main():
 	)
 	dataloader = data.DataLoader(
 		dataset=dataset,
-		batch_size=20,
+		batch_size=4,
 		shuffle=True,
 		collate_fn=AutoEncoderBatch.collate_fn(
+			visibility=5,
 			pad_token=model.pad_token,
 			ign_token=model.ign_token,
 		),
@@ -75,8 +76,19 @@ def main():
 		limit=5,
 	)
 
+	# init = torch.load(
+	# 	"autoencoder_00_34253.pth",
+	# 	map_location=device,
+	# 	weights_only=True,
+	# )
+	# model.load_state_dict(init["model"])
+	# optimizer.load_state_dict(init["optimizer"])
+	# scheduler.load_state_dict(init["scheduler"])
+	# scheduler.step()
+	# epoch = init["epoch"] + 1
+
 	signal.signal(signal.SIGINT, interrupt)
-	for epoch in range(epoch_num):
+	for epoch in range(epoch, epoch_num):
 		bar = tqdm(
 			iterable=dataloader,
 			leave=True,
@@ -87,21 +99,20 @@ def main():
 			optimizer.zero_grad()
 
 			batch = batch.to(device)
-			mem, tgt = model.forward(
-				src_tokens=batch.tokens,
-				src_lengths=batch.lengths,
-
-				tgt_tokens=batch.tokens,
-				tgt_lengths=batch.lengths,
+			output = model.forward(
+				input_ids=batch.input_ids,
+				attention_mask=batch.attention_mask,
+				decoder_input_ids=batch.input_ids,
+				decoder_attention_mask=batch.decoder_attention_mask,
 			)
 
-			prune_lengths = mem.prune_probs.sum(dim=2)
+			prune_lengths = output.prune_probs.sum(dim=2)
 			prune_ratios = torch.roll(prune_lengths, 1)
 			prune_ratios[:, 0] = batch.lengths
 			prune_ratios = prune_lengths / prune_ratios
 
 			loss_vol = (prune_ratios ** 2).mean()
-			loss_cls = fn.cross_entropy(tgt.flatten(0, 1), batch.labels.flatten())
+			loss_cls = fn.cross_entropy(output.logits.flatten(0, 1), batch.labels.flatten())
 
 			if step < warmup and epoch < 1:
 				loss = loss_cls
@@ -115,7 +126,7 @@ def main():
 			loss_cls = loss_cls.item()
 			loss = loss.item()
 
-			acc = accuracy(tgt, batch.labels, model.ign_token)
+			acc = accuracy(output.logits, batch.labels, model.ign_token)
 			abs_comp = prune_lengths[:, -1] / batch.lengths
 			abs_comp = abs_comp.mean().item()
 			rel_comp = prune_ratios.mean(dim=0).tolist()
