@@ -10,7 +10,7 @@ from .batch import AutoEncoderBatch
 from .checkpoint import AutoEncoderCheckpoint
 from .dataset import AutoEncoderDataset
 from .log import AutoEncoderLog
-from .model import AutoEncoder
+from .model import AutoEncoder, AutoEncoderConfig
 
 from ..util.metric import accuracy
 from ..util.prepare import prepare_random, prepare_device
@@ -24,36 +24,35 @@ def interrupt(_, __):
 
 
 def main():
-	epoch = 0
 	epoch_num = 2
 	warmup = 500
 
 	prepare_random()
 	device = prepare_device()
 
-	model = AutoEncoder(
-		name="google/flan-t5-small",
-		bias=5,
-		temperature=0.1,
-	).to(device)
+	model_name = "google/flan-t5-small"
+	config = AutoEncoderConfig.from_pretrained(model_name)
+	model = AutoEncoder(config).to(device)
+
 	dataset = AutoEncoderDataset(
 		name="abisee/cnn_dailymail",
 		version="3.0.0",
 		split="train",
 		text_column="article",
-		tokenizer=model.name,
+		tokenizer=model_name,
 		ign_token=model.ign_token,
 	)
 	dataloader = data.DataLoader(
 		dataset=dataset,
-		batch_size=4,
+		batch_size=20,
 		shuffle=True,
 		collate_fn=AutoEncoderBatch.collate_fn(
-			visibility=5,
 			pad_token=model.pad_token,
 			ign_token=model.ign_token,
 		),
+		num_workers=2,
 	)
+
 	optimizer = optim.Adam(
 		params=model.parameters(),
 		lr=3e-4,
@@ -63,6 +62,7 @@ def main():
 		step_size=1,
 		gamma=0.5,
 	)
+
 	log = AutoEncoderLog(
 		file="autoencoder.log",
 		rolling_n=100,
@@ -76,19 +76,19 @@ def main():
 		limit=5,
 	)
 
-	# init = torch.load(
-	# 	"autoencoder_00_34253.pth",
-	# 	map_location=device,
-	# 	weights_only=True,
-	# )
-	# model.load_state_dict(init["model"])
-	# optimizer.load_state_dict(init["optimizer"])
-	# scheduler.load_state_dict(init["scheduler"])
-	# scheduler.step()
-	# epoch = init["epoch"] + 1
+	init = torch.load(
+		"autoencoder_01_58253.pth",
+		map_location=device,
+		weights_only=True,
+	)
+
+	init["model"] = {k.removeprefix("t5."): v for k, v in init["model"].items()}
+	model.load_state_dict(init["model"])
+	optimizer.load_state_dict(init["optimizer"])
+	scheduler.load_state_dict(init["scheduler"])
 
 	signal.signal(signal.SIGINT, interrupt)
-	for epoch in range(epoch, epoch_num):
+	for epoch in range(1, epoch_num):
 		bar = tqdm(
 			iterable=dataloader,
 			leave=True,
@@ -100,10 +100,10 @@ def main():
 
 			batch = batch.to(device)
 			output = model.forward(
-				input_ids=batch.input_ids,
-				attention_mask=batch.attention_mask,
-				decoder_input_ids=batch.input_ids,
-				decoder_attention_mask=batch.decoder_attention_mask,
+				input_ids=batch.encoder_input_ids,
+				attention_mask=batch.pad_mask,
+				decoder_input_ids=batch.decoder_input_ids,
+				decoder_attention_mask=None,
 			)
 
 			prune_lengths = output.prune_probs.sum(dim=2)

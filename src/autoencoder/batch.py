@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from functools import partial
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 import torch
 from torch import Tensor
@@ -9,20 +9,21 @@ from torch.nn.utils import rnn
 
 @dataclass
 class AutoEncoderBatch:
-	input_ids: Tensor
-	attention_mask: Tensor
-	decoder_attention_mask: Tensor
-
 	lengths: Tensor
 	labels: Tensor
 
+	encoder_input_ids: Tensor
+	decoder_input_ids: Tensor
+	pad_mask: Tensor
+
 	def to(self, device) -> "AutoEncoderBatch":
 		return AutoEncoderBatch(
-			input_ids=self.input_ids.to(device),
 			lengths=self.lengths.to(device),
-			attention_mask=self.attention_mask.to(device),
-			decoder_attention_mask=self.decoder_attention_mask.to(device),
 			labels=self.labels.to(device),
+
+			encoder_input_ids=self.encoder_input_ids.to(device),
+			decoder_input_ids=self.decoder_input_ids.to(device),
+			pad_mask=self.pad_mask.to(device),
 		)
 
 	@staticmethod
@@ -60,32 +61,31 @@ class AutoEncoderBatch:
 	@staticmethod
 	def collate(
 		batch: List[Tuple[Tensor, Tensor]],
-		visibility: int,
 		pad_token: int,
 		ign_token: int,
 	) -> "AutoEncoderBatch":
-		tokens, labels = tuple(map(list, zip(*batch)))
+		encoder_input_ids, decoder_input_ids = tuple(map(list, zip(*batch)))
+		lengths = torch.tensor([len(sample) for sample in encoder_input_ids], dtype=torch.long)
+		labels = encoder_input_ids
 
-		lengths = torch.tensor([len(sample) for sample in tokens], dtype=torch.long)
-		tokens = rnn.pad_sequence(tokens, batch_first=True, padding_value=pad_token)
 		labels = rnn.pad_sequence(labels, batch_first=True, padding_value=ign_token)
-
-		attention_mask = AutoEncoderBatch.pad_mask(lengths)
-		decoder_attention_mask = AutoEncoderBatch.visibility_mask(visibility, lengths)
+		encoder_input_ids = rnn.pad_sequence(encoder_input_ids, batch_first=True, padding_value=pad_token)
+		decoder_input_ids = rnn.pad_sequence(decoder_input_ids, batch_first=True, padding_value=pad_token)
+		pad_mask = AutoEncoderBatch.pad_mask(lengths)
 
 		return AutoEncoderBatch(
-			input_ids=tokens,
 			lengths=lengths,
-			attention_mask=attention_mask,
-			decoder_attention_mask=decoder_attention_mask,
 			labels=labels,
+
+			encoder_input_ids=encoder_input_ids,
+			decoder_input_ids=decoder_input_ids,
+			pad_mask=pad_mask,
 		)
 
 	@staticmethod
-	def collate_fn(visibility: int, pad_token: int, ign_token: int):
+	def collate_fn(pad_token: int, ign_token: int):
 		return partial(
 			AutoEncoderBatch.collate,
-			visibility=visibility,
 			pad_token=pad_token,
 			ign_token=ign_token,
 		)
