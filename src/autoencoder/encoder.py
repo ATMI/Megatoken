@@ -55,56 +55,39 @@ class Encoder(T5Stack):
 	def init(self):
 		bias = self.config.prune_bias
 		temperature = self.config.prune_temperature
+		max_length = self.config.n_positions
 
-		self.prune_layers = nn.ModuleList(
-			PruneLayer(bias, temperature)
-			for _ in range(len(self.block))
-		)
+		self.prune_layers = nn.ModuleList([PruneLayer(bias, temperature) for _ in range(len(self.block))])
+		self.register_buffer("token_indices", torch.arange(max_length), False)
 
 	def forward(
 		self,
 		input_ids=None,
 		attention_mask=None,
 		**kwargs,
-		# encoder_hidden_states=None,
-		# encoder_attention_mask=None,
-		# inputs_embeds=None,
-		# head_mask=None,
-		# cross_attn_head_mask=None,
-		# past_key_values=None,
-		# use_cache=None,
-		# output_attentions=None,
-		# output_hidden_states=None,
-		# return_dict=None,
-		# cache_position=None
 	) -> Output:
 		device = input_ids.device
-		batch_size = input_ids.size(0)
-		input_length = input_ids.size(1)
-
-		batch_indices = torch.arange(batch_size, device=device)
-		token_indices = torch.arange(input_length, device=device)
+		batch_size, input_length = input_ids.shape
 
 		padding_mask = attention_mask.bool()
 		input_lengths = padding_mask.sum(dim=1)
 
 		attention_mask = torch.where(padding_mask, 0, -torch.inf)
-		attention_mask = attention_mask.unsqueeze(1).unsqueeze(1)
+		attention_mask = attention_mask[:, None, None, :]
 
 		layer_num = len(self.block)
-		prune_masks = (batch_size, layer_num, input_length)
-		prune_masks = torch.zeros(prune_masks, device=device)
-		prune_probs = torch.zeros((batch_size, layer_num, input_length), device=device)
 		prune_keep = (torch.rand(batch_size, device=device) * input_lengths).long()
+		prune_masks = torch.zeros((batch_size, layer_num, input_length), device=device)
+		prune_probs = torch.zeros_like(prune_masks)
 
-		# Kinda strange variable with cache disabled,
-		# but it's used to calculate the position bias
-		# in HF spaghetti. Trust me :)
 		embeds = self.embed_tokens(input_ids)
 		embeds = self.dropout(embeds)
 
+		token_indices = self.token_indices[:input_length]
+		batch_indices = torch.arange(batch_size, device=device)
+
 		for i, encoder_layer in enumerate(self.block):
-			embeds[:, :, 0] = 0.0
+			# embeds[:, :, 0] = 0.0
 			embeds, attention_mask = encoder_layer(
 				hidden_states=embeds,
 				cache_position=token_indices,
@@ -115,6 +98,7 @@ class Encoder(T5Stack):
 
 			prune_layer = self.prune_layers[i]
 			prune_mask = prune_layer(embeds=embeds)
+
 			prune_mask = prune_mask + prune_masks[:, i - 1] if i else prune_mask
 			prune_mask[batch_indices, prune_keep] = 0.0
 			prune_masks[:, i] = prune_mask
@@ -124,8 +108,8 @@ class Encoder(T5Stack):
 			prune_probs[:, i] = prune_prob
 
 			prune_mask = prune_mask.unsqueeze(1) + prune_mask.unsqueeze(2)
+			prune_mask[:, token_indices, token_indices] = 0.0
 			attention_mask = attention_mask + prune_mask.unsqueeze(1)
-			attention_mask[:, :, token_indices, token_indices] = 0.0
 
 		embeds = self.final_layer_norm(embeds)
 		embeds = self.dropout(embeds)
