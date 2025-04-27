@@ -71,8 +71,8 @@ def main():
 		optimizer=optimizer,
 		scheduler=scheduler,
 		dataloader=dataloader,
-		freq_step=1000,
-		limit=2,
+		freq_step=2000,
+		limit=5,
 	)
 
 	signal.signal(signal.SIGINT, interrupt)

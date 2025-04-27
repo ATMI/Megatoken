@@ -45,7 +45,7 @@ def main():
 	ax1.plot(
 		x, acc,
 		label="accuracy",
-		color="g",
+		color="k",
 	)
 
 	ax2 = ax1.twinx()
@@ -54,16 +54,16 @@ def main():
 
 	for i, r in enumerate(rel_comp):
 		ax2.plot(x, r, label=f"{i}")
-	ax2.plot(x, abs_comp)
+	ax2.plot(x, abs_comp, label="total")
 
-	# ax1.set_xlim(0, 34254)
-	# ax2.set_xlim(0, 34254)
+	ax1.set_xlim(0, 34254)
+	ax2.set_xlim(0, 34254)
 
-	ax1.set_xlim(0, 1000)
-	ax2.set_xlim(0, 1000)
+	# ax1.set_xlim(0, 1000)
+	# ax2.set_xlim(0, 1000)
 
-	ax1.legend(loc="lower left")
-	ax2.legend(loc="upper right")
+	ax1.legend(loc="lower right")
+	ax2.legend(loc="lower left")
 
 	plt.grid(True)
 	plt.show()
