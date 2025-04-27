@@ -6,7 +6,7 @@ from ..util.metric import RollingMean
 
 class AutoEncoderLog:
 	def __init__(self, file: str, rolling_n: int):
-		self.file = open(file, "a")
+		self.file = open(file, "w")
 		self.rolling = RollingMean(rolling_n)
 
 	def __call__(

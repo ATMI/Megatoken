@@ -5,9 +5,6 @@ import datasets
 import torch
 from torch.utils import data
 from transformers import AutoTokenizer
-import logging
-
-logging.getLogger("transformers.tokenization_utils").setLevel(logging.ERROR)
 
 
 class AutoEncoderDataset(data.Dataset):
@@ -24,6 +21,7 @@ class AutoEncoderDataset(data.Dataset):
 		tokenizer = AutoTokenizer.from_pretrained(tokenizer)
 
 		batch = batch[text_column]
+		batch = [sample.lower() for sample in batch]
 		batch = tokenizer(
 			text=batch,
 			padding=False,

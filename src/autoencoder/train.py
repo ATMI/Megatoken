@@ -50,7 +50,6 @@ def main():
 			pad_token=model.pad_token,
 			ign_token=model.ign_token,
 		),
-		num_workers=2,
 	)
 
 	optimizer = optim.Adam(
@@ -76,19 +75,8 @@ def main():
 		limit=5,
 	)
 
-	init = torch.load(
-		"autoencoder_01_58253.pth",
-		map_location=device,
-		weights_only=True,
-	)
-
-	init["model"] = {k.removeprefix("t5."): v for k, v in init["model"].items()}
-	model.load_state_dict(init["model"])
-	optimizer.load_state_dict(init["optimizer"])
-	scheduler.load_state_dict(init["scheduler"])
-
 	signal.signal(signal.SIGINT, interrupt)
-	for epoch in range(1, epoch_num):
+	for epoch in range(epoch_num):
 		bar = tqdm(
 			iterable=dataloader,
 			leave=True,
