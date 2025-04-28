@@ -82,9 +82,7 @@ class Encoder(T5Stack):
 
 		attention_mask = torch.zeros_like(padding_mask, dtype=torch.float)
 		attention_mask.masked_fill_(padding_mask, -torch.inf)
-		attention_mask = attention_mask.unsqueeze(1).repeat(1, input_length, 1)
-		attention_mask[:, token_indices, token_indices] = 0.0
-		attention_mask = attention_mask.unsqueeze(1).expand(-1, self.config.num_heads, -1, -1)
+		attention_mask = attention_mask[:, None, None, :].repeat(1, self.config.num_heads, input_length, 1)
 
 		layer_num = len(self.block)
 		prune_keep = (torch.rand(batch_size, device=device) * (input_lengths - 1)).long()
@@ -116,8 +114,9 @@ class Encoder(T5Stack):
 			prune_probs[:, i] = prune_prob
 
 			prune_mask = prune_mask.unsqueeze(1) + prune_mask.unsqueeze(2)
-			prune_mask[:, token_indices, token_indices] = 0.0
+			# prune_mask[:, token_indices, token_indices] = 0.0
 			attention_mask = attention_mask + prune_mask.unsqueeze(1)
+			attention_mask[:, :, token_indices, token_indices] = 0.0
 
 		embeds = self.final_layer_norm(embeds)
 		embeds = self.dropout(embeds)

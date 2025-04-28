@@ -10,7 +10,7 @@ from .batch import AutoEncoderBatch
 from .checkpoint import AutoEncoderCheckpoint
 from .dataset import AutoEncoderDataset
 from .log import AutoEncoderLog
-from .model import AutoEncoder
+from .model import AutoEncoder, AutoEncoderConfig
 
 from ..util.metric import accuracy
 from ..util.prepare import prepare_random, prepare_device
@@ -25,14 +25,19 @@ def interrupt(_, __):
 
 def main():
 	epoch_num = 2
-	warmup = 1000
+	warmup = 500
 
 	prepare_random()
 	device = prepare_device()
 
 	model_name = "google/flan-t5-small"
+	# config = AutoEncoderConfig.from_pretrained(model_name)
+	# model = AutoEncoder.from_pretrained(model_name, config=config).to(device)
 	model = AutoEncoder.from_pretrained(model_name).to(device)
 	model.train()
+
+	# checkpoint = torch.load("autoencoder_00_18000.pth", map_location=device, weights_only=True)
+	# model.load_state_dict(checkpoint["model"])
 
 	dataset = AutoEncoderDataset(
 		name="abisee/cnn_dailymail",
@@ -97,7 +102,7 @@ def main():
 			prune_lengths = output.prune_probs.sum(dim=2)
 			prune_ratios = torch.roll(prune_lengths, 1)
 			prune_ratios[:, 0] = batch.lengths
-			prune_ratios = prune_lengths / prune_ratios
+			prune_ratios = prune_lengths / prune_ratios  # .detach()
 
 			loss_vol = (prune_ratios ** 2).mean()
 			loss_cls = fn.cross_entropy(
