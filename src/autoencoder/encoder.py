@@ -82,7 +82,7 @@ class Encoder(T5Stack):
 
 		prune_masks = torch.zeros((batch_size, len(self.block), input_length), device=device)
 		prune_probs = torch.zeros_like(prune_masks)
-		prune_keep = (torch.rand(batch_size, device=device) * input_lengths).long()
+		prune_keep = (torch.rand(batch_size, device=device) * (input_lengths - 1)).long()
 
 		embeds = self.embed_tokens(input_ids)
 		embeds = self.dropout(embeds)
