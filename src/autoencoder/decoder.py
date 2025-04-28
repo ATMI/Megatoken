@@ -8,19 +8,21 @@ class Decoder(T5Stack):
 		self.visibility_mask = None
 
 	def init(self):
-		visibility = self.config.decoder_visibility
-		if visibility <= 0:
-			self.visibility_mask = None
-			return
-
 		max_length = self.config.n_positions
-		visibility_mask = torch.full((max_length, max_length), -torch.inf)
+		visibility = self.config.decoder_visibility
 
-		for i in range(max_length):
-			start = max(0, i - visibility)
-			visibility_mask[i, start:i + 1] = 0
+		if visibility > 0:
+			mask = torch.full((max_length, max_length), -torch.inf)
+			for i in range(max_length):
+				start = max(0, i - visibility)
+				mask[i, start:i + 1] = 0
+		else:
+			mask = torch.triu(torch.ones(max_length, max_length), diagonal=1)
+			mask = mask.masked_fill(mask == 1, -torch.inf)
 
-		self.visibility_mask = visibility_mask
+		self.register_buffer("decoder_indices", torch.arange(max_length, dtype=torch.long), False)
+		self.register_buffer("encoder_indices", torch.arange(max_length, dtype=torch.long), False)
+		self.register_buffer("decoder_attn_mask", mask, False)
 
 	def forward(
 		self,
@@ -29,37 +31,16 @@ class Decoder(T5Stack):
 		encoder_hidden_states=None,
 		encoder_attention_mask=None,
 		**kwargs,
-		# inputs_embeds=None,
-		# head_mask=None,
-		# cross_attn_head_mask=None,
-		# past_key_values=None,
-		# use_cache=None,
-		# output_attentions=None,
-		# output_hidden_states=None,
-		# return_dict=None,
-		# cache_position=None
 	):
-		device = input_ids.device
 		encoder_embeds = encoder_hidden_states
-
 		encoder_embeds_length = encoder_embeds.size(1)
 		decoder_embeds_length = input_ids.size(1)
 
-		encoder_embeds_indices = torch.arange(encoder_embeds_length, device=device)
-		decoder_embeds_indices = torch.arange(decoder_embeds_length, device=device)
+		encoder_embeds_indices = self.encoder_indices[:encoder_embeds_length]
+		decoder_embeds_indices = self.decoder_indices[:decoder_embeds_length]
 
-		encoder_attn_mask = encoder_attention_mask
-		encoder_attn_mask = encoder_attn_mask.unsqueeze(1)
-		encoder_attn_mask = encoder_attn_mask.unsqueeze(1)
-
-		decoder_attn_mask = attention_mask
-		if decoder_attn_mask is None and self.visibility_mask is not None:
-			if self.visibility_mask.device != device:
-				self.visibility_mask = self.visibility_mask.to(device)
-
-			decoder_attn_mask = self.visibility_mask[:decoder_embeds_length, :decoder_embeds_length]
-			decoder_attn_mask = decoder_attn_mask.unsqueeze(0)
-			decoder_attn_mask = decoder_attn_mask.unsqueeze(0)
+		encoder_attn_mask = encoder_attention_mask[:, None, None, :]
+		decoder_attn_mask = self.decoder_attn_mask[None, None, :decoder_embeds_length, :decoder_embeds_length]
 
 		decoder_embeds = self.embed_tokens(input_ids)
 		decoder_embeds = self.dropout(decoder_embeds)
