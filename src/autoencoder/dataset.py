@@ -75,18 +75,20 @@ class AutoEncoderDataset(data.Dataset):
 
 	def __getitem__(self, index):
 		sample = self.dataset[index]
-		#	a		b		c		<eos>	input_ids
-		#	<bos>	a		b		c		decoder_input_ids
-		#	a		b		c		<eos>	labels
+		tokens = sample["tokens"]
+		labels = tokens[1:]
 
-		#	a		b		c		input_ids
-		#	<bos>	a		b		decoder_input_ids
-		#	a		b		c		labels
+		if tokens[-1] == self.eos_token:
+			#	a	b	c	<eos>
+			#	a	b	c
+			#	b	c	<eos>
+			tokens.pop()
+		else:
+			#	a	b	c
+			#	b	c	<ign>
+			labels.append(self.ign_token)
 
-		input_ids = sample["tokens"]
-		decoder_input_ids = [self.bos_token] + input_ids[:-1]
+		tokens = torch.tensor(tokens)
+		labels = torch.tensor(labels)
 
-		input_ids = torch.tensor(input_ids)
-		decoder_input_ids = torch.tensor(decoder_input_ids)
-
-		return input_ids, decoder_input_ids
+		return tokens, labels

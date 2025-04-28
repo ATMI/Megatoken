@@ -27,58 +27,26 @@ class AutoEncoderBatch:
 		)
 
 	@staticmethod
-	def pad_mask(lengths: Tensor) -> Tensor:
-		batch_size = lengths.size(0)
-		input_length = lengths.max()
-
-		mask = (batch_size, input_length)
-		mask = torch.ones(mask, dtype=torch.bool)
-
-		for i in range(batch_size):
-			length = lengths[i]
-			mask[i, length:] = 0
-
-		return mask
-
-	@staticmethod
-	def visibility_mask(visibility: int, lengths: Tensor) -> Tensor:
-		batch_size = lengths.size(0)
-		input_length = lengths.max()
-
-		mask = (batch_size, input_length, input_length)
-		mask = torch.zeros(mask, dtype=torch.bool)
-
-		for i in range(input_length):
-			start = max(0, i - visibility)
-			mask[:, i, start: i + 1] = 1
-
-		for i in range(batch_size):
-			start = lengths[i]
-			mask[i, start:, 0] = 1
-
-		return mask
-
-	@staticmethod
 	def collate(
 		batch: List[Tuple[Tensor, Tensor]],
 		pad_token: int,
 		ign_token: int,
 	) -> "AutoEncoderBatch":
-		encoder_input_ids, decoder_input_ids = tuple(map(list, zip(*batch)))
-		lengths = torch.tensor([len(sample) for sample in encoder_input_ids], dtype=torch.long)
-		labels = encoder_input_ids
+		tokens, labels = tuple(map(list, zip(*batch)))
+		lengths = torch.tensor([len(sample) for sample in tokens])
 
+		tokens = rnn.pad_sequence(tokens, batch_first=True, padding_value=pad_token)
 		labels = rnn.pad_sequence(labels, batch_first=True, padding_value=ign_token)
-		encoder_input_ids = rnn.pad_sequence(encoder_input_ids, batch_first=True, padding_value=pad_token)
-		decoder_input_ids = rnn.pad_sequence(decoder_input_ids, batch_first=True, padding_value=pad_token)
-		pad_mask = AutoEncoderBatch.pad_mask(lengths)
+
+		pad_mask = torch.arange(tokens.size(1))
+		pad_mask = pad_mask.unsqueeze(0) < lengths.unsqueeze(1)
 
 		return AutoEncoderBatch(
 			lengths=lengths,
 			labels=labels,
 
-			encoder_input_ids=encoder_input_ids,
-			decoder_input_ids=decoder_input_ids,
+			encoder_input_ids=tokens,
+			decoder_input_ids=tokens,
 			pad_mask=pad_mask,
 		)
 
