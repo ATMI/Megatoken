@@ -28,6 +28,10 @@ class AutoEncoder(T5ForConditionalGeneration):
 		prune_probs: FloatTensor = None
 
 	@property
+	def eos_token(self) -> int:
+		return self.config.eos_token_id
+
+	@property
 	def pad_token(self) -> int:
 		return self.config.pad_token_id
 
