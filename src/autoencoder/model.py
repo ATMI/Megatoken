@@ -12,9 +12,9 @@ from .encoder import Encoder
 
 class AutoEncoderConfig(T5Config):
 	model_type = "t5-autoencoder"
-	decoder_visibility = 5
+	decoder_visibility = 0
 	prune_temperature = 0.1
-	prune_bias = 5
+	prune_bias = 50000
 
 	def __init__(self, **kwargs):
 		super(AutoEncoderConfig, self).__init__(**kwargs)
@@ -63,8 +63,9 @@ class AutoEncoder(T5ForConditionalGeneration):
 			)
 
 		encoder_embeds = encoder_outputs.last_hidden_state
-		encoder_attn_mask = torch.where(attention_mask.bool(), 0, -torch.inf)
-		encoder_attn_mask = encoder_outputs.prune_masks[:, -1] + encoder_attn_mask
+		encoder_attn_mask = torch.zeros_like(attention_mask, dtype=torch.float)
+		encoder_attn_mask.masked_fill_(attention_mask.eq(0), -torch.inf)
+		encoder_attn_mask = encoder_attn_mask + encoder_outputs.prune_masks[:, -1]
 		decoder_attn_mask = decoder_attention_mask
 
 		# Decode

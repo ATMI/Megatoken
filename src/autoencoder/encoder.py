@@ -35,8 +35,8 @@ class PruneLayer(nn.Module):
 		gates = (gates + self.bias) / self.temperature
 		gates = fn.logsigmoid(gates)
 
-		if not self.training:
-			gates = torch.where(gates > -1, gates, -torch.inf)
+		# if not self.training:
+		gates = torch.where(gates > -1, gates, -torch.inf)
 
 		return gates
 
@@ -69,22 +69,30 @@ class Encoder(T5Stack):
 		device = input_ids.device
 		batch_size, input_length = input_ids.shape
 
-		padding_mask = attention_mask.bool()
-		input_lengths = padding_mask.sum(dim=1)
+		token_indices = self.token_indices[:input_length]
+		batch_indices = torch.arange(batch_size, device=device)
+		input_lengths = attention_mask.sum(1)
+		padding_mask = attention_mask.eq(0)
 
-		attention_mask = torch.where(padding_mask, 0, -torch.inf)
-		attention_mask = attention_mask[:, None, None, :]
+		# attention_mask = torch.zeros_like(padding_mask, dtype=torch.float)
+		# attention_mask.masked_fill_(padding_mask, -torch.inf)
+		# attention_mask = attention_mask[:, None, None, :]
+		# attention_mask = attention_mask.expand(-1, self.config.num_heads, input_length, -1)
+		# attention_mask[:, :, token_indices, token_indices] = 0.0
+
+		attention_mask = torch.zeros_like(padding_mask, dtype=torch.float)
+		attention_mask.masked_fill_(padding_mask, -torch.inf)
+		attention_mask = attention_mask.unsqueeze(1).repeat(1, input_length, 1)
+		attention_mask[:, token_indices, token_indices] = 0.0
+		attention_mask = attention_mask.unsqueeze(1).expand(-1, self.config.num_heads, -1, -1)
 
 		layer_num = len(self.block)
-		prune_keep = (torch.rand(batch_size, device=device) * input_lengths).long()
+		prune_keep = (torch.rand(batch_size, device=device) * (input_lengths - 1)).long()
 		prune_masks = torch.zeros((batch_size, layer_num, input_length), device=device)
 		prune_probs = torch.zeros_like(prune_masks)
 
 		embeds = self.embed_tokens(input_ids)
 		embeds = self.dropout(embeds)
-
-		token_indices = self.token_indices[:input_length]
-		batch_indices = torch.arange(batch_size, device=device)
 
 		for i, encoder_layer in enumerate(self.block):
 			embeds[:, :, 0] = 0.0
@@ -104,7 +112,7 @@ class Encoder(T5Stack):
 			prune_masks[:, i] = prune_mask
 
 			prune_prob = (prune_mask / math.sqrt(self.config.d_kv)).exp()
-			prune_prob = (prune_prob * padding_mask)
+			prune_prob = prune_prob.masked_fill(padding_mask, 0.0)
 			prune_probs[:, i] = prune_prob
 
 			prune_mask = prune_mask.unsqueeze(1) + prune_mask.unsqueeze(2)

@@ -10,7 +10,7 @@ from .batch import AutoEncoderBatch
 from .checkpoint import AutoEncoderCheckpoint
 from .dataset import AutoEncoderDataset
 from .log import AutoEncoderLog
-from .model import AutoEncoder, AutoEncoderConfig
+from .model import AutoEncoder
 
 from ..util.metric import accuracy
 from ..util.prepare import prepare_random, prepare_device
@@ -31,8 +31,8 @@ def main():
 	device = prepare_device()
 
 	model_name = "google/flan-t5-small"
-	config = AutoEncoderConfig.from_pretrained(model_name)
-	model = AutoEncoder(config).to(device)
+	model = AutoEncoder.from_pretrained(model_name).to(device)
+	model.train()
 
 	dataset = AutoEncoderDataset(
 		name="abisee/cnn_dailymail",
@@ -100,7 +100,11 @@ def main():
 			prune_ratios = prune_lengths / prune_ratios
 
 			loss_vol = (prune_ratios ** 2).mean()
-			loss_cls = fn.cross_entropy(output.logits.flatten(0, 1), batch.labels.flatten())
+			loss_cls = fn.cross_entropy(
+				input=output.logits.flatten(0, 1),
+				target=batch.labels.flatten(),
+				ignore_index=model.ign_token
+			)
 
 			if step < warmup and epoch < 1:
 				loss = loss_cls
