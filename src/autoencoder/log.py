@@ -31,11 +31,12 @@ class AutoEncoderLog:
 		self.file.write("\n")
 		self.file.flush()
 
+		acc, abs_comp, loss_cls, loss_vol = self.rolling(acc, abs_comp, loss_cls, loss_vol)
 		return {
 			"acc": f"{acc * 100:.2f}",
 			"com": f"{abs_comp * 100:.2f}",
-			"cls": f"{loss_cls:.2f}",
-			"vol": f"{loss_vol:.2f}",
+			"cls": f"{loss_cls:.4f}",
+			"vol": f"{loss_vol:.4f}",
 		}
 
 	def close(self):
