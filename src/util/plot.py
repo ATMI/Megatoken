@@ -57,11 +57,11 @@ def main():
 		ax2.plot(x, r, label=f"{i}")
 	ax2.plot(x, abs_comp, label="total")
 
-	# ax1.set_xlim(0, 2 * 34254)
-	# ax2.set_xlim(0, 2 * 34254)
-	#
-	ax1.set_xlim(0, 1000)
-	ax2.set_xlim(0, 1000)
+	ax1.set_xlim(0, 34254)
+	ax2.set_xlim(0, 34254)
+
+	# ax1.set_xlim(0, 1000)
+	# ax2.set_xlim(0, 1000)
 
 	ax1.legend(loc="lower right")
 	ax2.legend(loc="lower left")

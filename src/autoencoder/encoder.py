@@ -76,7 +76,9 @@ class Encoder(T5Stack):
 		padding_mask = attention_mask.eq(0)
 
 		attention_mask = torch.where(padding_mask, -torch.inf, 0)
-		attention_mask = attention_mask.unsqueeze(1).unsqueeze(1)
+		attention_mask = attention_mask.unsqueeze(1).repeat(1, input_length, 1)
+		attention_mask[:, token_indices, token_indices] = 0.0
+		attention_mask = attention_mask.unsqueeze(1)
 
 		prune_masks = torch.zeros((batch_size, len(self.block), input_length), device=device)
 		prune_probs = torch.zeros_like(prune_masks)
@@ -107,8 +109,8 @@ class Encoder(T5Stack):
 			prune_probs[:, i] = prune_prob
 
 			prune_mask = prune_mask.unsqueeze(1) + prune_mask.unsqueeze(2)
+			prune_mask[:, token_indices, token_indices] = 0.0
 			attention_mask = attention_mask + prune_mask.unsqueeze(1)
-			attention_mask[:, :, token_indices, token_indices] = 0.0
 
 		embeds = self.final_layer_norm(embeds)
 		embeds = self.dropout(embeds)
