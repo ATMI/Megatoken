@@ -35,8 +35,8 @@ class PruneLayer(nn.Module):
 		gates = (gates + self.bias) / self.temperature
 		gates = fn.logsigmoid(gates)
 
-		# if not self.training:
-		gates = torch.where(gates > -1, gates, -torch.inf)
+		if not self.training:
+			gates = torch.where(gates > -1, gates, -torch.inf)
 
 		return gates
 

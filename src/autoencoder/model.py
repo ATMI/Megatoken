@@ -12,9 +12,9 @@ from .encoder import Encoder
 
 class AutoEncoderConfig(T5Config):
 	model_type = "t5-autoencoder"
-	decoder_visibility = 0
+	decoder_visibility = 5
 	prune_temperature = 0.1
-	prune_bias = 50000
+	prune_bias = 5
 
 	def __init__(self, **kwargs):
 		super(AutoEncoderConfig, self).__init__(**kwargs)
