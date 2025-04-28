@@ -40,7 +40,7 @@ class AutoEncoder(T5ForConditionalGeneration):
 		return -100
 
 	def __init__(self, config):
-		super(AutoEncoder, self).__init__(config)
+		super().__init__(config)
 
 		self.encoder.__class__ = Encoder
 		self.decoder.__class__ = Decoder

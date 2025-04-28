@@ -11,7 +11,6 @@ from .checkpoint import AutoEncoderCheckpoint
 from .dataset import AutoEncoderDataset
 from .log import AutoEncoderLog
 from .model import AutoEncoder, AutoEncoderConfig
-
 from ..util.metric import accuracy
 from ..util.prepare import prepare_random, prepare_device
 from ..util.prompt import prompt
@@ -31,9 +30,8 @@ def main():
 	device = prepare_device()
 
 	model_name = "google/flan-t5-small"
-	# config = AutoEncoderConfig.from_pretrained(model_name)
-	# model = AutoEncoder.from_pretrained(model_name, config=config).to(device)
-	model = AutoEncoder.from_pretrained(model_name).to(device)
+	config = AutoEncoderConfig.from_pretrained(model_name)
+	model = AutoEncoder.from_pretrained(model_name, config=config).to(device)
 	model.train()
 
 	# checkpoint = torch.load("autoencoder_00_18000.pth", map_location=device, weights_only=True)
