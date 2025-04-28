@@ -25,7 +25,7 @@ def interrupt(_, __):
 
 def main():
 	epoch_num = 2
-	warmup = 500
+	warmup = 1000
 
 	prepare_random()
 	device = prepare_device()

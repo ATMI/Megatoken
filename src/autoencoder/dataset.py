@@ -21,7 +21,7 @@ class AutoEncoderDataset(data.Dataset):
 		tokenizer = AutoTokenizer.from_pretrained(tokenizer)
 
 		batch = batch[text_column]
-		batch = [sample.lower() for sample in batch]
+		# batch = [sample.lower() for sample in batch]
 		batch = tokenizer(
 			text=batch,
 			padding=False,
