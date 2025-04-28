@@ -11,7 +11,7 @@ from .encoder import Encoder
 
 
 class AutoEncoderConfig(T5Config):
-	model_type = "prune-autoencoder"
+	model_type = "t5-autoencoder"
 	decoder_visibility = 5
 	prune_temperature = 0.1
 	prune_bias = 5
@@ -89,5 +89,5 @@ class AutoEncoder(T5ForConditionalGeneration):
 		return output
 
 
-AutoConfig.register("prune-autoencoder", AutoEncoderConfig)
+AutoConfig.register("t5-autoencoder", AutoEncoderConfig)
 AutoModel.register(AutoEncoderConfig, AutoEncoder)

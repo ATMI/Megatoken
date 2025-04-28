@@ -87,7 +87,7 @@ class Encoder(T5Stack):
 		batch_indices = torch.arange(batch_size, device=device)
 
 		for i, encoder_layer in enumerate(self.block):
-			# embeds[:, :, 0] = 0.0
+			embeds[:, :, 0] = 0.0
 			embeds, attention_mask = encoder_layer(
 				hidden_states=embeds,
 				cache_position=token_indices,
