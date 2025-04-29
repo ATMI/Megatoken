@@ -1,98 +1,123 @@
-import argparse
-from typing import Callable, List
+from functools import partial
+from typing import List, Dict, Tuple, Callable
 
+import datasets
 import numpy as np
 import torch
-from torch.utils import data
-from tqdm import tqdm
 
-from src.autoencoder.dataset import AutoEncoderDataset
-from src.autoencoder.encoder import Encoder
-from src.autoencoder.model import AutoEncoderConfig, AutoEncoder
-from src.util.prepare import prepare_random, prepare_device
-from src.util.tensorfile import TensorWriter
+from datasets import Dataset
+from transformers import AutoTokenizer, PreTrainedTokenizer
+
+from .encoder import Encoder
+from .model import AutoEncoderConfig, AutoEncoder
+from ..util.prepare import prepare_random, prepare_device
+
+WorkerState = Tuple[PreTrainedTokenizer, Encoder, torch.device]
+state: WorkerState | None = None
 
 
-def encode_dataset(dataset: Dataset, checkpoint: str) -> Callable[[List[str]], List[np.array]]:
+def init(model_name: str, checkpoint: str) -> WorkerState:
 	prepare_random()
 	device = prepare_device()
+
+	config = AutoEncoderConfig.from_pretrained(model_name)
+	tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+	model = AutoEncoder.from_pretrained(model_name, config=config)
+	model = model.encoder
+
+	weights = torch.load(checkpoint, map_location=device, weights_only=True)
+	weights = {
+		k.removeprefix("encoder."): v
+		for k, v in weights["model"].items()
+		if k.startswith("encoder.")
+	}
+
+	model.load_state_dict(weights)
+	model.eval().to(device)
+
+	return tokenizer, model, device
+
+
+def encode(
+	init_fn: Callable[[], WorkerState],
+	dst_column: str,
+	text: List[str],
+) -> Dict[str, np.array]:
+	global state
 	torch.set_grad_enabled(False)
 
-	model_name = "google/flan-t5-small"
+	state = state or init_fn()
+	tokenizer, model, device = state
+	inputs = tokenizer(
+		text=text,
+		padding=True,
+		truncation=True,
+		add_special_tokens=True,
 
-	model: Encoder | None = None
+		return_tensors="pt",
+		return_attention_mask=True,
+	)
 
-	def init_worker():
-		nonlocal model, checkpoint
+	outputs: Encoder.Output = model(
+		input_ids=inputs.input_ids.to(device),
+		attention_mask=inputs.attention_mask.to(device),
+	)
 
-		config = AutoEncoderConfig.from_pretrained(model_name)
-		model: AutoEncoder = AutoEncoder.from_pretrained(model_name, config=config)
-		model: Encoder = model.encoder
+	mask = outputs.prune_masks[:, -1].cpu().numpy()
+	embeds = outputs.last_hidden_state.cpu().numpy()
+	attention_mask = inputs.attention_mask.numpy().astype(bool)
 
-		weights = torch.load(checkpoint, map_location=device, weights_only=True)
-		weights = {
-			k.removeprefix("encoder."): v
-			for k, v in weights["model"].items()
-			if k.startswith("encoder.")
-		}
+	del inputs, outputs
 
-		model.load_state_dict(weights)
-		model.eval().to(device)
+	mask = (mask > -1) & attention_mask
+	embeds = embeds[mask]
+	lengths = mask.sum(axis=1)
 
-	def encode(text: List[str]) -> List[np.array]:
-		pass
+	if len(lengths) > 1:
+		embeds = np.split(embeds, lengths[:-1])
+
+	return {
+		dst_column: embeds,
+	}
+
+
+def encode_dataset(
+	dataset: Dataset,
+	model_name: str,
+	checkpoint: str,
+	src_column: str,
+	dst_column: str,
+	batch_size: int,
+) -> Dataset:
+	dataset = dataset.map(
+		function=partial(
+			encode,
+			partial(init, model_name, checkpoint),
+			dst_column,
+		),
+		input_columns=[src_column],
+		batched=True,
+		batch_size=batch_size,
+		num_proc=1,
+	)
+	return dataset
 
 
 def main():
-	args = argparse.ArgumentParser()
-	args.add_argument("checkpoint", help="Checkpoint file")
-	args.add_argument("subset", help="Subset to use: train or test")
-	args.add_argument("output", help="Output file")
-	args = args.parse_args()
-
-	# TODO: replace the arguments, move similar logic to separate functions
-	dataset = AutoEncoderDataset(
-		name="abisee/cnn_dailymail",
-		version="3.0.0",
-		split=args.subset,
-		text_column="article",
-		tokenizer=model_name,
-		ign_token=config.ign_token_id,
+	dataset = datasets.load_dataset(
+		path="abisee/cnn_dailymail",
+		name="3.0.0",
 	)
-	dataloader = data.DataLoader(
+	dataset = encode_dataset(
 		dataset=dataset,
-		batch_size=16,
-		shuffle=False,
-		collate_fn=EncoderBatch.collate_fn(
-			pad_token=config.pad_token_id,
-		),
+		model_name="google/flan-t5-small",
+		checkpoint="checkpoint/65586150dd2ce3eba3172ea837b748286e277200/autoencoder_00_34253.pth",
+		src_column="article",
+		dst_column="article_embeds",
+		batch_size=8,
 	)
-
-	writer = TensorWriter(args.output)
-	for batch in tqdm(dataloader):
-		batch: EncoderBatch = batch.to(device)
-		output: Encoder.Output = model(
-			input_ids=batch.input_ids,
-			attention_mask=batch.pad_mask,
-		)
-
-		prune_mask = output.prune_masks[:, -1]
-		mask = (prune_mask > -1) & batch.pad_mask
-
-		embeds = output.last_hidden_state
-		embeds = embeds[mask]
-		lengths = mask.sum(dim=1)
-
-		embeds = embeds.cpu()
-		lengths = lengths.tolist()
-
-		head = 0
-		for idx, length in enumerate(lengths):
-			tail = head + length
-			embed = embeds[head:tail]
-			head = tail
-			writer.write(idx, embed)
-	writer.close()
+	dataset.save_to_disk("embeddings/cnndm")
 
 
 if __name__ == "__main__":
