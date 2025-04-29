@@ -90,7 +90,7 @@ def main():
 			optimizer.zero_grad()
 
 			batch = batch.to(device)
-			output = model.forward(
+			output = model(
 				input_ids=batch.encoder_input_ids,
 				attention_mask=batch.pad_mask,
 				decoder_input_ids=batch.decoder_input_ids,
