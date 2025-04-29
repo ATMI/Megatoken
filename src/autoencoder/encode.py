@@ -12,11 +12,14 @@ from .encoder import Encoder
 from .model import AutoEncoderConfig, AutoEncoder
 from ..util.prepare import prepare_random, prepare_device
 
-WorkerState = Tuple[PreTrainedTokenizer, Encoder, torch.device]
-state: WorkerState | None = None
+EncodeState = Tuple[PreTrainedTokenizer, Encoder, torch.device]
+encode_state: EncodeState | None = None
+
+TokenizeState = Tuple[PreTrainedTokenizer,]
+tokenize_state: TokenizeState | None = None
 
 
-def init(model_name: str, checkpoint: str) -> WorkerState:
+def encode_init(model_name: str, checkpoint: str) -> EncodeState:
 	prepare_random()
 	device = prepare_device()
 
@@ -26,7 +29,7 @@ def init(model_name: str, checkpoint: str) -> WorkerState:
 	model = AutoEncoder.from_pretrained(model_name, config=config)
 	model = model.encoder
 
-	weights = torch.load(checkpoint, map_location=device, weights_only=True)
+	weights = torch.load(checkpoint, map_location="cpu", weights_only=True)
 	weights = {
 		k.removeprefix("encoder."): v
 		for k, v in weights["model"].items()
@@ -40,17 +43,17 @@ def init(model_name: str, checkpoint: str) -> WorkerState:
 
 
 def encode(
-	init_fn: Callable[[], WorkerState],
+	init_fn: Callable[[], EncodeState],
 	dst_column: str,
-	text: List[str],
+	txt_column: List[str],
 ) -> Dict[str, np.array]:
-	global state
+	global encode_state
 	torch.set_grad_enabled(False)
 
-	state = state or init_fn()
-	tokenizer, model, device = state
+	encode_state = encode_state or init_fn()
+	tokenizer, model, device = encode_state
 	inputs = tokenizer(
-		text=text,
+		text=txt_column,
 		padding=True,
 		truncation=True,
 		add_special_tokens=True,
@@ -92,11 +95,11 @@ def encode_dataset(
 	src_column: str,
 	dst_column: str,
 	batch_size: int,
-) -> Dataset:
+) -> Dataset | DatasetDict:
 	dataset = dataset.map(
 		function=partial(
 			encode,
-			partial(init, model_name, checkpoint),
+			partial(encode_init, model_name, checkpoint),
 			dst_column,
 		),
 		input_columns=[src_column],
@@ -107,21 +110,74 @@ def encode_dataset(
 	return dataset
 
 
+def tokenize_init(tokenizer: str) -> TokenizeState:
+	tokenizer = AutoTokenizer.from_pretrained(tokenizer)
+	return tokenizer,
+
+
+def tokenize(
+	init_fn: Callable[[], TokenizeState],
+	dst_column: List[str],
+	txt_column: List[List[str]],
+):
+	global tokenize_state
+	tokenize_state = tokenize_state or init_fn()
+
+	tokenizer, = tokenize_state
+	result = {
+		dst_column: tokenizer(
+			text=txt_column,
+			padding=False,
+			truncation=True,
+			add_special_tokens=True,
+			return_attention_mask=False,
+		)["input_ids"]
+	}
+
+	return result
+
+
+def tokenize_dataset(
+	dataset: Dataset | DatasetDict,
+	model_name: str,
+	src_column: str,
+	dst_column: str,
+) -> Dataset | DatasetDict:
+	dataset = dataset.map(
+		function=partial(
+			tokenize,
+			partial(tokenize_init, model_name),
+			dst_column,
+		),
+		input_columns=[src_column],
+		batched=True,
+	)
+	return dataset
+
+
 def main():
+	model_name = "google/flan-t5-small"
 	dataset = datasets.load_dataset(
 		path="abisee/cnn_dailymail",
 		name="3.0.0",
 	)
+	dataset = dataset["train"].select(range(10000))
+	dataset = tokenize_dataset(
+		dataset=dataset,
+		model_name=model_name,
+		src_column="highlights",
+		dst_column="highlights_embeds",
+	)
 	dataset = encode_dataset(
 		dataset=dataset,
-		model_name="google/flan-t5-small",
+		model_name=model_name,
 		checkpoint="checkpoint/65586150dd2ce3eba3172ea837b748286e277200/autoencoder_00_34253.pth",
 		src_column="article",
 		dst_column="article_embeds",
-		batch_size=8,
+		batch_size=16,
 	)
 	dataset.save_to_disk(
-		"embeddings/cnndm",
+		"embeddings/cnndm1",
 		max_shard_size="1GB"
 	)
 
