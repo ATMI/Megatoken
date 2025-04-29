@@ -120,7 +120,10 @@ def main():
 		dst_column="article_embeds",
 		batch_size=8,
 	)
-	dataset.save_to_disk("embeddings/cnndm")
+	dataset.save_to_disk(
+		"embeddings/cnndm",
+		max_shard_size="1GB"
+	)
 
 
 if __name__ == "__main__":
