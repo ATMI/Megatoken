@@ -1,10 +1,8 @@
-from functools import partial
-from typing import List, Dict, Tuple, Callable
+from typing import List, Dict, Tuple
 
 import datasets
 import numpy as np
 import torch
-
 from datasets import Dataset, DatasetDict
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
@@ -43,14 +41,15 @@ def encode_init(model_name: str, checkpoint: str) -> EncodeState:
 
 
 def encode(
-	init_fn: Callable[[], EncodeState],
-	dst_column: str,
 	txt_column: List[str],
+	model_name: str,
+	checkpoint: str,
+	dst_column: str,
 ) -> Dict[str, np.array]:
 	global encode_state
 	torch.set_grad_enabled(False)
 
-	encode_state = encode_state or init_fn()
+	encode_state = encode_state or encode_init(model_name, checkpoint)
 	tokenizer, model, device = encode_state
 	inputs = tokenizer(
 		text=txt_column,
@@ -97,11 +96,12 @@ def encode_dataset(
 	batch_size: int,
 ) -> Dataset | DatasetDict:
 	dataset = dataset.map(
-		function=partial(
-			encode,
-			partial(encode_init, model_name, checkpoint),
-			dst_column,
-		),
+		encode,
+		fn_kwargs={
+			"model_name": model_name,
+			"checkpoint": checkpoint,
+			"dst_column": dst_column,
+		},
 		input_columns=[src_column],
 		batched=True,
 		batch_size=batch_size,
@@ -116,12 +116,12 @@ def tokenize_init(tokenizer: str) -> TokenizeState:
 
 
 def tokenize(
-	init_fn: Callable[[], TokenizeState],
-	dst_column: List[str],
 	txt_column: List[List[str]],
+	model_name: str,
+	dst_column: List[str],
 ):
 	global tokenize_state
-	tokenize_state = tokenize_state or init_fn()
+	tokenize_state = tokenize_state or tokenize_init(model_name)
 
 	tokenizer, = tokenize_state
 	result = {
@@ -144,11 +144,11 @@ def tokenize_dataset(
 	dst_column: str,
 ) -> Dataset | DatasetDict:
 	dataset = dataset.map(
-		function=partial(
-			tokenize,
-			partial(tokenize_init, model_name),
-			dst_column,
-		),
+		tokenize,
+		fn_kwargs={
+			"model_name": model_name,
+			"dst_column": dst_column,
+		},
 		input_columns=[src_column],
 		batched=True,
 	)
