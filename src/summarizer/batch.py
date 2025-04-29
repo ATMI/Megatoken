@@ -1,72 +1,54 @@
 from dataclasses import dataclass
+from functools import partial
 from typing import List, Tuple
 
 import torch
 from torch import Tensor
-from torch.nn.utils.rnn import pad_sequence
-
-from ..autoencoder.config import Config
-from ..autoencoder.autoencoder import AutoEncoder
+from torch.nn.utils import rnn
 
 
 @dataclass
-class Batch:
-	memory: AutoEncoder.Memory
-	target: Tensor
-	target_mask: Tensor
+class SummarizerBatch:
 	labels: Tensor
-	text: List[str]
+	pad_mask: Tensor
+	input_embeds: Tensor
+	input_tokens: Tensor
 
-	def to(self, device) -> "Batch":
-		return Batch(
-			memory=AutoEncoder.Memory(
-				embeds=self.memory.input_embeds.to(device),
-				pad_mask=self.memory.pad_mask.to(device),
-
-				kv_dim=None,
-				gate_masks=None,
-				attn_scores=None,
-			),
-			target=self.target.to(device),
-			target_mask=self.target_mask.to(device),
+	def to(self, device) -> "SummarizerBatch":
+		return SummarizerBatch(
 			labels=self.labels.to(device),
-			text=self.text,
+			pad_mask=self.pad_mask.to(device),
+			input_embeds=self.input_embeds.to(device),
+			input_tokens=self.input_tokens.to(device),
 		)
 
 	@staticmethod
 	def collate(
-		batch: List[Tuple[Tensor, Tensor, str]],
-	) -> "Batch":
-		batch_size = len(batch)
-		memory, labels, text = tuple(map(list, zip(*batch)))
+		batch: List[Tuple[Tensor, Tensor]],
+		pad_token: int,
+		ign_token: int,
+	) -> "SummarizerBatch":
+		labels, input_embeds, input_tokens = tuple(map(list, zip(*batch)))
+		lengths = torch.tensor([len(sample) for sample in input_embeds])
 
-		target = [torch.tensor([Config.pad_token] + label[:-1]) for label in labels]
-		labels = [torch.tensor(label) for label in labels]
+		labels = rnn.pad_sequence(labels, batch_first=True, padding_value=ign_token)
+		input_embeds = rnn.pad_sequence(input_embeds, batch_first=True, padding_value=0.0)
+		input_tokens = rnn.pad_sequence(input_tokens, batch_first=True, padding_value=pad_token)
 
-		labels_tensor = pad_sequence(labels, batch_first=True, padding_value=Config.ignore_token)
-		target_tensor = pad_sequence(target, batch_first=True, padding_value=Config.pad_token)
-		memory_tensor = pad_sequence(memory, batch_first=True, padding_value=0.0)
+		pad_mask = torch.arange(input_embeds.size(1))
+		pad_mask = pad_mask.unsqueeze(0) < lengths.unsqueeze(1)
 
-		memory_mask = torch.ones((batch_size, memory_tensor.size(1)), dtype=torch.bool)
-		target_mask = torch.ones((batch_size, target_tensor.size(1)), dtype=torch.bool)
-
-		for row in range(batch_size):
-			memory_mask[row, len(memory[row]):] = 0
-			target_mask[row, len(target[row]):] = 0
-
-		memory = AutoEncoder.Memory(
-			embeds=memory_tensor,
-			pad_mask=memory_mask,
-
-			kv_dim=None,
-			gate_masks=None,
-			attn_scores=None,
+		return SummarizerBatch(
+			labels=labels,
+			pad_mask=pad_mask,
+			input_embeds=input_embeds,
+			input_tokens=input_tokens,
 		)
 
-		return Batch(
-			memory=memory,
-			target=target_tensor,
-			target_mask=target_mask,
-			labels=labels_tensor,
-			text=text,
+	@staticmethod
+	def collate_fn(pad_token: int, ign_token: int):
+		return partial(
+			SummarizerBatch.collate,
+			pad_token=pad_token,
+			ign_token=ign_token,
 		)

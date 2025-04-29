@@ -70,7 +70,8 @@ class AutoEncoder(T5ForConditionalGeneration):
 		encoder_embeds = encoder_outputs.last_hidden_state
 		encoder_attn_mask = torch.zeros_like(attention_mask, dtype=torch.float)
 		encoder_attn_mask.masked_fill_(attention_mask.eq(0), -torch.inf)
-		encoder_attn_mask = encoder_attn_mask + encoder_outputs.prune_masks[:, -1]
+		if encoder_outputs.prune_masks is not None:
+			encoder_attn_mask = encoder_attn_mask + encoder_outputs.prune_masks[:, -1]
 		decoder_attn_mask = decoder_attention_mask
 
 		# Decode

@@ -161,12 +161,11 @@ def main():
 		path="abisee/cnn_dailymail",
 		name="3.0.0",
 	)
-	dataset = dataset["train"].select(range(10000))
 	dataset = tokenize_dataset(
 		dataset=dataset,
 		model_name=model_name,
 		src_column="highlights",
-		dst_column="highlights_embeds",
+		dst_column="highlights_token",
 	)
 	dataset = encode_dataset(
 		dataset=dataset,
@@ -177,7 +176,7 @@ def main():
 		batch_size=16,
 	)
 	dataset.save_to_disk(
-		"embeddings/cnndm1",
+		"embeddings/cnndm",
 		max_shard_size="1GB"
 	)
 

@@ -1,5 +1,3 @@
-import json
-
 import datasets
 import torch
 from torch import optim
@@ -7,82 +5,116 @@ from torch.nn import functional as fn
 from torch.utils import data
 from tqdm import tqdm
 
-from .dataset import Dataset
-from .batch import Batch
-from ..autoencoder.config import Config
-from ..autoencoder.autoencoder import AutoEncoder
-from ..util.metric import RollingMean, accuracy
-from ..util import prepare
+from .dataset import SummarizerDataset
+from .batch import SummarizerBatch
+from .log import SummarizerLog
+
+from ..autoencoder.encoder import Encoder
+from ..autoencoder.model import AutoEncoderConfig, AutoEncoder
+from ..util.prepare import prepare_random, prepare_device
+from ..util.metric import accuracy
 
 
 def main():
-	prepare.prepare_random(Config.seed)
+	prepare_random()
+	device = prepare_device()
 
-	dataset = datasets.load_from_disk("dataset")
-	dataset = dataset["train"]
-	# dataset = dataset.filter(lambda row: len(row["source"]) < Config.max_length)
+	epoch_num = 1
+	model_name = "google/flan-t5-small"
+	config = AutoEncoderConfig.from_pretrained(model_name, decoder_visibility=0)
 
-	dataset = Dataset("memory", dataset)
+	model: AutoEncoder = AutoEncoder.from_pretrained(model_name, config=config)
+	del model.encoder
+
+	checkpoint = "checkpoint/65586150dd2ce3eba3172ea837b748286e277200/autoencoder_00_34253.pth"
+	checkpoint = torch.load(checkpoint, map_location="cpu", weights_only=True)
+	checkpoint = {
+		k: v
+		for k, v in checkpoint["model"].items()
+		if not k.startswith("encoder.")
+	}
+
+	model.load_state_dict(checkpoint)
+	model.train()
+	model.to(device)
+
+	params = []
+	for name, param in model.named_parameters():
+		if name.startswith("shared."):
+			param.requires_grad = False
+		else:
+			params.append(param)
+
+	dataset = datasets.load_from_disk("embeddings/cnndm1")
+	dataset = dataset.select_columns(["article_embeds", "highlights_embeds"])
+	dataset = SummarizerDataset(
+		dataset=dataset,
+		bos_token=config.pad_token_id,
+	)
 	dataloader = data.DataLoader(
-		dataset,
-		batch_size=Config.batch_size,
-		collate_fn=Batch.collate,
+		dataset=dataset,
+		batch_size=4,
+		collate_fn=SummarizerBatch.collate_fn(
+			pad_token=config.pad_token_id,
+			ign_token=config.ign_token_id,
+		),
 	)
 
-	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	model = AutoEncoder(Config.model, Config.bias, Config.temperature)
-	model = model.to(device)
+	optimizer = optim.Adam(
+		params=params,
+		lr=3e-4,
+	)
+	scheduler = optim.lr_scheduler.StepLR(
+		optimizer=optimizer,
+		step_size=1,
+		gamma=0.5,
+	)
 
-	params = set()
-	del model.t5.encoder
-	for name, param in model.named_parameters():
-		if name.startswith("t5.shared."):
-			param.requires_grad = False
-			continue
-		params.add(name)
+	log = SummarizerLog(
+		file="summarizer.log",
+		rolling_n=100,
+	)
 
-	init = torch.load("1.pth", map_location=device, weights_only=True)
-	model.load_state_dict(init["model"], strict=False)
-
-	optimizer = optim.Adam(filter(lambda param: param.requires_grad, model.parameters()), Config.lr)
-	scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=Config.step, gamma=Config.gamma)
-
-	log = open("log.json", "w")
-	rolling = RollingMean(Config.rolling_n)
-
-	for epoch in range(Config.epoch_num):
-		bar = tqdm(dataloader, f"Epoch {epoch + 1}/{Config.epoch_num}", leave=True)
+	for epoch in range(epoch_num):
+		bar = tqdm(
+			iterable=dataloader,
+			desc=f"Epoch {epoch + 1}/{epoch_num}",
+			leave=True,
+		)
 
 		for batch in bar:
 			optimizer.zero_grad()
 
-			batch = batch.to(device)
-			logits = model.decode(
-				memory=batch.memory,
-				tokens=batch.target,
-				pad_mask=batch.target_mask,
-				attn_mask=None,
+			batch: SummarizerBatch = batch.to(device)
+			output = model.forward(
+				attention_mask=batch.pad_mask,
+				encoder_outputs=Encoder.Output(
+					last_hidden_state=batch.input_embeds,
+				),
+				decoder_input_ids=batch.input_tokens,
 			)
 
-			loss = fn.cross_entropy(logits.flatten(0, 1), batch.labels.flatten())
+			loss = fn.cross_entropy(
+				input=output.logits.flatten(0, 1),
+				target=batch.labels.flatten(),
+				ignore_index=config.ign_token_id,
+			)
+
 			loss.backward()
 			optimizer.step()
 
-			acc = accuracy(logits, batch.labels, Config.ignore_token) * 100
+			acc = accuracy(output.logits, batch.labels, config.ign_token_id)
 			loss = loss.item()
 
-			record = {"acc": acc, "loss": loss}
-			log.write(json.dumps(record) + "\n")
-
-			acc, loss = rolling(acc, loss)
-			bar.set_postfix(acc=acc, loss=loss)
+			postfix = log(acc, loss)
+			bar.set_postfix(**postfix)
 
 		checkpoint = {
 			"model": model.state_dict(),
 			"optimizer": optimizer.state_dict(),
 			"scheduler": scheduler.state_dict(),
 		}
-		torch.save(checkpoint, f"summarizer_{epoch}.pth")
+		torch.save(checkpoint, f"summarizer_{epoch:02d}.pth")
 
 		scheduler.step()
 		bar.close()
