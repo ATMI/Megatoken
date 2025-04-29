@@ -5,7 +5,7 @@ import datasets
 import numpy as np
 import torch
 
-from datasets import Dataset
+from datasets import Dataset, DatasetDict
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from .encoder import Encoder
@@ -71,11 +71,14 @@ def encode(
 	del inputs, outputs
 
 	mask = (mask > -1) & attention_mask
-	embeds = embeds[mask]
+	embeds = embeds[mask].astype(np.float32)
 	lengths = mask.sum(axis=1)
 
 	if len(lengths) > 1:
-		embeds = np.split(embeds, lengths[:-1])
+		splits = np.cumsum(lengths[:-1])
+		embeds = np.split(embeds, splits)
+	else:
+		embeds = [embeds]
 
 	return {
 		dst_column: embeds,
@@ -83,7 +86,7 @@ def encode(
 
 
 def encode_dataset(
-	dataset: Dataset,
+	dataset: Dataset | DatasetDict,
 	model_name: str,
 	checkpoint: str,
 	src_column: str,
