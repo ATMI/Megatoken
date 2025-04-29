@@ -37,7 +37,7 @@ class AutoEncoder(T5ForConditionalGeneration):
 
 	@property
 	def ign_token(self) -> int:
-		return -100
+		return self.config.ign_token_id
 
 	def __init__(self, config):
 		super().__init__(config)
