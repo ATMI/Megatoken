@@ -165,7 +165,7 @@ def main():
 		dataset=dataset,
 		model_name=model_name,
 		src_column="highlights",
-		dst_column="highlights_token",
+		dst_column="highlights_tokens",
 	)
 	dataset = encode_dataset(
 		dataset=dataset,

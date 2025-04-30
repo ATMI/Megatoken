@@ -24,45 +24,48 @@ def main():
 	config = AutoEncoderConfig.from_pretrained(model_name, decoder_visibility=0)
 
 	model: AutoEncoder = AutoEncoder.from_pretrained(model_name, config=config)
-	del model.encoder
+	# del model.encoder
 
-	checkpoint = "checkpoint/65586150dd2ce3eba3172ea837b748286e277200/autoencoder_00_34253.pth"
-	checkpoint = torch.load(checkpoint, map_location="cpu", weights_only=True)
-	checkpoint = {
-		k: v
-		for k, v in checkpoint["model"].items()
-		if not k.startswith("encoder.")
-	}
-
-	model.load_state_dict(checkpoint)
-	model.train()
+	# checkpoint = "checkpoint/65586150dd2ce3eba3172ea837b748286e277200/autoencoder_00_34253.pth"
+	# checkpoint = torch.load(checkpoint, map_location="cpu", weights_only=True)
+	# checkpoint = {
+	# 	k: v
+	# 	for k, v in checkpoint["model"].items()
+	# 	if not k.startswith("encoder.")
+	# }
+	#
+	# model.load_state_dict(checkpoint)
+	# model.train()
 	model.to(device)
 
-	params = []
-	for name, param in model.named_parameters():
-		if name.startswith("shared."):
-			param.requires_grad = False
-		else:
-			params.append(param)
+	# params = []
+	# for name, param in model.named_parameters():
+	# 	if name.startswith("shared."):
+	# 		param.requires_grad = False
+	# 	else:
+	# 		params.append(param)
 
-	dataset = datasets.load_from_disk("embeddings/cnndm1")
-	dataset = dataset.select_columns(["article_embeds", "highlights_embeds"])
+	dataset = datasets.load_from_disk("embeddings/cnndm")
+	dataset = dataset["train"]
+	dataset = dataset.select_columns(["highlights_token", "article_embeds"]) # TODO: highlights_tokens
 	dataset = SummarizerDataset(
 		dataset=dataset,
 		bos_token=config.pad_token_id,
 	)
 	dataloader = data.DataLoader(
 		dataset=dataset,
-		batch_size=4,
+		batch_size=24,
+		shuffle=False,
 		collate_fn=SummarizerBatch.collate_fn(
 			pad_token=config.pad_token_id,
 			ign_token=config.ign_token_id,
 		),
+		num_workers=4,
 	)
 
 	optimizer = optim.Adam(
-		params=params,
-		lr=3e-4,
+		params=model.parameters(),
+		lr=1e-3,
 	)
 	scheduler = optim.lr_scheduler.StepLR(
 		optimizer=optimizer,
