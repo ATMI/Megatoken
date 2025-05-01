@@ -1,5 +1,5 @@
 import torch
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModel, T5ForConditionalGeneration
 
 from .model import AutoEncoder, AutoEncoderConfig
 from ..util.prepare import prepare_random, prepare_device

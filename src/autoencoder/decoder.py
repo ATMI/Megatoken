@@ -43,7 +43,7 @@ class Decoder(T5Stack):
 		decoder_attn_mask = self.decoder_attn_mask[None, None, :decoder_embeds_length, :decoder_embeds_length]
 
 		decoder_embeds = self.embed_tokens(input_ids)
-		decoder_embeds = self.dropout(decoder_embeds)
+		# decoder_embeds = self.dropout(decoder_embeds)
 
 		for i, decoder_layer in enumerate(self.block):
 			self_attn, cross_attn, fc = decoder_layer.layer

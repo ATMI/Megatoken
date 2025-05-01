@@ -31,8 +31,9 @@ def main():
 
 	model_name = "google/flan-t5-small"
 	config = AutoEncoderConfig.from_pretrained(model_name)
+
 	model = AutoEncoder.from_pretrained(model_name, config=config).to(device)
-	model.train()
+	model = model.train()
 
 	# checkpoint = torch.load("autoencoder_00_18000.pth", map_location=device, weights_only=True)
 	# model.load_state_dict(checkpoint["model"])

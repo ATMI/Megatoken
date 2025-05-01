@@ -85,7 +85,7 @@ class Encoder(T5Stack):
 		prune_keep = (torch.rand(batch_size, device=device) * input_lengths).long()
 
 		embeds = self.embed_tokens(input_ids)
-		embeds = self.dropout(embeds)
+		# embeds = self.dropout(embeds)
 
 		for i, encoder_layer in enumerate(self.block):
 			if i % 2 == 0:
