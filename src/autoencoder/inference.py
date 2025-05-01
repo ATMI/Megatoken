@@ -1,102 +1,56 @@
-import argparse
-
 import torch
-from transformers import AutoTokenizer, T5Tokenizer
+from transformers import AutoTokenizer, AutoModel, T5ForConditionalGeneration
 
-from .config import Config
-from .autoencoder import AutoEncoder
-
-
-def inference(
-	model: torch.nn.Module,
-	tokenizer: T5Tokenizer,
-	text: str,
-	max_length: int = 512,
-):
-	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	model = model.to(device)
-
-	tokens = tokenizer(
-		text,
-		padding=False,
-		truncation=True,
-		max_length=Config.max_length,
-		return_tensors="pt",
-	)["input_ids"].to(device)
-	pad_mask = torch.ones_like(tokens, dtype=torch.bool, device=device)
-	encoder_eos_mask = torch.tensor([[0], [tokens.size(1) - 1]], device=device)
-
-	print("Initial length:", tokens.size(1))
-
-	model.eval()
-	with torch.no_grad():
-		memory = model.encode(
-			tokens=tokens,
-			pad_mask=pad_mask,
-			attn_mask=None,
-			eos_mask=encoder_eos_mask,
-			attn_scores=False,
-		)
-
-	out_size = (memory.gate_mask.exp() != 0).sum().item()
-	ratio = out_size / tokens.size(1)
-	print(f"Compression rate: {ratio:.2f}")
-	print("Output size:", out_size)
-
-	out = tokens[0][:Config.decoder_visibility].unsqueeze(0)
-
-	while True:
-		seq_length = out.size(1)
-		decoder_mask = torch.full((seq_length, seq_length), -torch.inf, device=device)
-		for i in range(seq_length):
-			decoder_mask[i:i + Config.decoder_visibility + 1, i] = 0
-		decoder_mask[:, 0] = 0
-
-		with torch.no_grad():
-			logits = model.decode(
-				memory=memory,
-				tokens=out,
-				pad_mask=torch.ones_like(out, dtype=torch.bool, device=device),
-				attn_mask=decoder_mask,
-			).squeeze(0)[-1]
-
-		next_tok = logits.argmax(dim=-1)
-
-		if next_tok.item() == tokenizer.eos_token_id:
-			print("\nModel reached EOS token!")
-			break
-
-		next_tok = torch.tensor([[next_tok]], device=device)
-		out = torch.cat((out, next_tok), dim=1)
-
-		if out.size(-1) == max_length:
-			break
-
-	output = tokenizer.decode(out.squeeze())
-	print("")
-	print("Initial text:\n", text, sep="")
-	print("Predicted:\n", output, sep="")
+from .model import AutoEncoder, AutoEncoderConfig
+from ..util.prepare import prepare_random, prepare_device
 
 
 def main():
-	# "Good beer selection. Understaffed for a light Monday night crowd, it wasn't her fault she was the only server. But it took about an hour to get our sandwiches. Mine was one of the best reubens I've ever had."
-	# "Very disappointed in the customer service. We ordered Reuben's and wanted coleslaw instead of kraut. They charged us $3.00 for the coleslaw. We will not be back . The iced tea is also terrible tasting."
-	args = argparse.ArgumentParser()
-	args.add_argument("checkpoint", type=str)
-	args = args.parse_args()
+	prepare_random()
+	device = prepare_device()
 
-	tokenizer = AutoTokenizer.from_pretrained(Config.model)
-	checkpoint = torch.load(args.checkpoint, weights_only=True)
+	model_name = "google/flan-t5-small"
+	tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-	model = AutoEncoder(Config.model, Config.bias, Config.temperature)
+	config = AutoEncoderConfig.from_pretrained(model_name)
+	model = AutoEncoder.from_pretrained(model_name, config=config)
+	model.eval()
+	model = model.to(device)
+
+	checkpoint = "autoencoder_01.pth"
+	checkpoint = torch.load(checkpoint, map_location=device, weights_only=True)
 	model.load_state_dict(checkpoint["model"])
 
-	while True:
-		text = input("> ")
-		if not text:
-			break
-		inference(model, tokenizer, text)
+	inputs = [
+		"""(CNN) -- A truck-bomb explosion has killed at least 13 people in the capital of Afghanistan's Logar province, a provincial spokesman said. The attack Saturday night killed four civilians and several militants, including members of the Pakistani Taliban and an affiliated group, said Din Mohammad Darwis, the spokesman. It happened in Pul e Alam, in central Afghanistan.""",
+		"""(CNN) One person was killed after more than 100 cars piled up on Interstate 94 near Kalamazoo, Michigan, state police said Friday. About 20 more were injured, with 10 of those injuries "more serious" in nature, Michigan State Police Officer Shane Criger said. One of the tractor-trailers involved in the wreck was carrying fireworks that can be seen on video detonating.""",
+	]
+
+	print("Inputs:")
+	for sample in inputs:
+		print(sample)
+	print()
+
+	inputs = tokenizer(inputs, return_tensors="pt", padding=True)
+	inputs["use_cache"] = False
+	inputs = inputs.to(device)
+
+	outputs = model.generate(
+		**inputs,
+		max_length=128,
+		eos_token_id=model.eos_token,
+		do_sample=False,
+		num_beams=1,
+	)
+	outputs = tokenizer.batch_decode(
+		outputs,
+		skip_special_tokens=True,
+	)
+
+	print("Outputs:")
+	for sample in outputs:
+		print(sample)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 	main()
