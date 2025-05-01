@@ -3,27 +3,23 @@ from functools import partial
 from typing import List, Tuple
 
 import torch
-from torch import Tensor
+from torch import Tensor, BoolTensor, LongTensor
 from torch.nn.utils import rnn
 
 
 @dataclass
 class SummarizerBatch:
-	# article: List[str]
-	labels: Tensor
-	# labels_str: List[str]
-	pad_mask: Tensor
-	input_embeds: Tensor
-	input_tokens: Tensor
+	article_padding: BoolTensor
+	article_tokens: LongTensor
+	summary_tokens: LongTensor
+	decoder_tokens: LongTensor
 
 	def to(self, device) -> "SummarizerBatch":
 		return SummarizerBatch(
-			# article=self.article,
-			labels=self.labels.to(device),
-			# labels_str=self.labels_str,
-			pad_mask=self.pad_mask.to(device),
-			input_embeds=self.input_embeds.to(device),
-			input_tokens=self.input_tokens.to(device),
+			article_padding=self.article_padding.to(device),
+			article_tokens=self.article_tokens.to(device),
+			summary_tokens=self.summary_tokens.to(device),
+			decoder_tokens=self.decoder_tokens.to(device),
 		)
 
 	@staticmethod
@@ -32,24 +28,21 @@ class SummarizerBatch:
 		pad_token: int,
 		ign_token: int,
 	) -> "SummarizerBatch":
-		labels, input_embeds, input_tokens = tuple(map(list, zip(*batch)))
-		# article, labels, labels_str, input_embeds, input_tokens = tuple(map(list, zip(*batch)))
-		lengths = torch.tensor([len(sample) for sample in input_embeds])
+		article_tokens, decoder_tokens, summary_tokens = tuple(map(list, zip(*batch)))
+		article_lengths = torch.tensor([len(sample) for sample in article_tokens])
 
-		labels = rnn.pad_sequence(labels, batch_first=True, padding_value=ign_token)
-		input_embeds = rnn.pad_sequence(input_embeds, batch_first=True, padding_value=0.0)
-		input_tokens = rnn.pad_sequence(input_tokens, batch_first=True, padding_value=pad_token)
+		article_tokens = rnn.pad_sequence(article_tokens, batch_first=True, padding_value=pad_token)
+		decoder_tokens = rnn.pad_sequence(decoder_tokens, batch_first=True, padding_value=pad_token)
+		summary_tokens = rnn.pad_sequence(summary_tokens, batch_first=True, padding_value=ign_token)
 
-		pad_mask = torch.arange(input_embeds.size(1))
-		pad_mask = pad_mask.unsqueeze(0) < lengths.unsqueeze(1)
+		article_padding = torch.arange(article_tokens.size(1))
+		article_padding = article_padding.unsqueeze(0) < article_lengths.unsqueeze(1)
 
 		return SummarizerBatch(
-			# article=article,
-			labels=labels,
-			# labels_str=labels_str,
-			pad_mask=pad_mask,
-			input_embeds=input_embeds,
-			input_tokens=input_tokens,
+			article_padding=article_padding,
+			article_tokens=article_tokens,
+			summary_tokens=summary_tokens,
+			decoder_tokens=decoder_tokens,
 		)
 
 	@staticmethod

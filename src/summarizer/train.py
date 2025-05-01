@@ -1,71 +1,59 @@
-import datasets
 import torch
 from torch import optim
 from torch.nn import functional as fn
 from torch.utils import data
 from tqdm import tqdm
 
-from .dataset import SummarizerDataset
 from .batch import SummarizerBatch
+from .dataset import SummarizerDataset
 from .log import SummarizerLog
-
-from ..autoencoder.encoder import Encoder
 from ..autoencoder.model import AutoEncoderConfig, AutoEncoder
-from ..util.prepare import prepare_random, prepare_device
 from ..util.metric import accuracy
+from ..util.prepare import prepare_random, prepare_device
 
 
 def main():
 	prepare_random()
 	device = prepare_device()
 
-	epoch_num = 1
+	epoch_num = 10
 	model_name = "google/flan-t5-small"
+
+	checkpoint = "autoencoder_01.pth"
+	checkpoint = torch.load(checkpoint, map_location="cpu", weights_only=True)
+
 	config = AutoEncoderConfig.from_pretrained(model_name, decoder_visibility=0)
-
 	model: AutoEncoder = AutoEncoder.from_pretrained(model_name, config=config)
-	# del model.encoder
-
-	# checkpoint = "checkpoint/65586150dd2ce3eba3172ea837b748286e277200/autoencoder_00_34253.pth"
-	# checkpoint = torch.load(checkpoint, map_location="cpu", weights_only=True)
-	# checkpoint = {
-	# 	k: v
-	# 	for k, v in checkpoint["model"].items()
-	# 	if not k.startswith("encoder.")
-	# }
-	#
-	# model.load_state_dict(checkpoint)
-	# model.train()
+	model.load_state_dict(checkpoint["model"])
 	model.to(device)
+	model.train()
 
-	# params = []
-	# for name, param in model.named_parameters():
-	# 	if name.startswith("shared."):
-	# 		param.requires_grad = False
-	# 	else:
-	# 		params.append(param)
-
-	dataset = datasets.load_from_disk("embeddings/cnndm")
-	dataset = dataset["train"]
-	dataset = dataset.select_columns(["highlights_token", "article_embeds"]) # TODO: highlights_tokens
 	dataset = SummarizerDataset(
-		dataset=dataset,
+		split="train",
+		model_name=model_name,
 		bos_token=config.pad_token_id,
 	)
 	dataloader = data.DataLoader(
 		dataset=dataset,
 		batch_size=24,
-		shuffle=False,
+		shuffle=True,
 		collate_fn=SummarizerBatch.collate_fn(
 			pad_token=config.pad_token_id,
 			ign_token=config.ign_token_id,
 		),
-		num_workers=4,
 	)
 
+	params = []
+	freeze = ["encoder.", "shared."]
+	for name, param in model.named_parameters():
+		if any(name.startswith(prefix) for prefix in freeze):
+			param.requires_grad = False
+		else:
+			params.append(param)
+
 	optimizer = optim.Adam(
-		params=model.parameters(),
-		lr=1e-3,
+		params=params,
+		lr=1e-4,
 	)
 	scheduler = optim.lr_scheduler.StepLR(
 		optimizer=optimizer,
@@ -90,23 +78,21 @@ def main():
 
 			batch: SummarizerBatch = batch.to(device)
 			output = model.forward(
-				attention_mask=batch.pad_mask,
-				encoder_outputs=Encoder.Output(
-					last_hidden_state=batch.input_embeds,
-				),
-				decoder_input_ids=batch.input_tokens,
+				input_ids=batch.article_tokens,
+				attention_mask=batch.article_padding,
+				decoder_input_ids=batch.decoder_tokens,
 			)
 
 			loss = fn.cross_entropy(
 				input=output.logits.flatten(0, 1),
-				target=batch.labels.flatten(),
+				target=batch.summary_tokens.flatten(),
 				ignore_index=config.ign_token_id,
 			)
 
 			loss.backward()
 			optimizer.step()
 
-			acc = accuracy(output.logits, batch.labels, config.ign_token_id)
+			acc = accuracy(output.logits, batch.summary_tokens, config.ign_token_id)
 			loss = loss.item()
 
 			postfix = log(acc, loss)

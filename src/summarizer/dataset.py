@@ -1,38 +1,75 @@
-from functools import partial
 from typing import List, Dict, Any, Tuple
 
 import datasets
 import torch
+from torch import LongTensor
 from torch.utils import data
-from transformers import AutoTokenizer
+from transformers import PreTrainedTokenizer, AutoTokenizer
+
+tokenizer: PreTrainedTokenizer | None = None
 
 
 class SummarizerDataset(data.Dataset):
+
+	@staticmethod
+	def tokenize(
+		batch: Dict[str, List[Any]],
+		model_name: str,
+	) -> Dict[str, List[Any]]:
+		global tokenizer
+		tokenizer = tokenizer or AutoTokenizer.from_pretrained(model_name)
+
+		kwargs = {
+			"add_special_tokens": True,
+			"truncation": True,
+			"padding": False,
+			"return_attention_mask": False,
+		}
+
+		article_tokens = tokenizer(batch["article"], **kwargs)["input_ids"]
+		summary_tokens = tokenizer(batch["highlights"], **kwargs)["input_ids"]
+
+		return {
+			"article_tokens": article_tokens,
+			"summary_tokens": summary_tokens,
+		}
+
 	def __init__(
 		self,
-		dataset: datasets.Dataset,
+		split: str,
+		model_name: str,
 		bos_token: int,
 	):
 		super().__init__()
+
+		dataset = datasets.load_dataset(
+			path="abisee/cnn_dailymail",
+			name="3.0.0",
+			split=split,
+		)
+		dataset = dataset.select_columns(["article", "highlights"])
+		dataset = dataset.map(
+			function=SummarizerDataset.tokenize,
+			fn_kwargs={"model_name": model_name},
+			batched=True,
+		)
+		dataset = dataset.select_columns(["article_tokens", "summary_tokens"])
+
 		self.dataset = dataset
 		self.bos_token = bos_token
 
 	def __len__(self):
 		return len(self.dataset)
 
-	def __getitem__(self, index):
+	def __getitem__(self, index) -> Tuple[LongTensor, LongTensor, LongTensor]:
 		sample = self.dataset[index]
 
-		# article = sample["article"]
-		# labels_str = sample["highlights"]
-		labels = sample["highlights_token"]  # TODO: highlights_tokens
+		article_tokens = sample["article_tokens"]
+		summary_tokens = sample["summary_tokens"]
+		decoder_tokens = [self.bos_token] + summary_tokens[:-1]
 
-		input_tokens = [self.bos_token] + labels[:-1]
-		input_embeds = sample["article_embeds"]
+		article_tokens = torch.tensor(article_tokens)
+		summary_tokens = torch.tensor(summary_tokens)
+		decoder_tokens = torch.tensor(decoder_tokens)
 
-		labels = torch.tensor(labels)
-		input_embeds = torch.tensor(input_embeds)
-		input_tokens = torch.tensor(input_tokens)
-
-		# return article, labels, labels_str, input_embeds, input_tokens
-		return labels, input_embeds, input_tokens
+		return article_tokens, decoder_tokens, summary_tokens

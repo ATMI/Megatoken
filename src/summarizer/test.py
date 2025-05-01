@@ -1,13 +1,11 @@
-import evaluate
 import torch
-import datasets
 from torch.utils import data
-from tqdm import tqdm
 from transformers import AutoTokenizer
 
-from ..autoencoder.encoder import Encoder
 from .batch import SummarizerBatch
 from .dataset import SummarizerDataset
+
+from ..util.metric import accuracy
 from ..autoencoder.model import AutoEncoder, AutoEncoderConfig
 from ..util.prepare import prepare_random, prepare_device
 
@@ -16,36 +14,23 @@ def main():
 	prepare_random()
 	device = prepare_device()
 
-	rouge = evaluate.load("rouge")
+	# rouge = evaluate.load("rouge")
 	model_name = "google/flan-t5-small"
 	tokenizer = AutoTokenizer.from_pretrained(model_name)
 	config = AutoEncoderConfig.from_pretrained(model_name, decoder_visibility=0)
 	model: AutoEncoder = AutoEncoder.from_pretrained(model_name, config=config)
 
-	checkpoint = "checkpoint/65586150dd2ce3eba3172ea837b748286e277200/autoencoder_00_34253.pth"
-	checkpoint = torch.load(checkpoint, map_location="cpu", weights_only=True)
-	encoder_checkpoint = {
-		k: v
-		for k, v in checkpoint["model"].items()
-		if k.startswith("encoder.")
-	}
-
-	checkpoint = "summarizer_00.pth"
+	checkpoint = "summarizer_01.pth"
 	checkpoint = torch.load(checkpoint, map_location=device, weights_only=True)
-	decoder_checkpoint = checkpoint["model"]
+	checkpoint = checkpoint["model"]
 
-	checkpoint = encoder_checkpoint | decoder_checkpoint
 	model.load_state_dict(checkpoint)
 	model.eval()
 	model.to(device)
 
-	dataset = datasets.load_from_disk("embeddings/cnndm")
-	dataset = dataset["test"]
-	dataset = dataset.select_columns(
-		["article", "highlights", "highlights_token", "article_embeds"]
-		)  # TODO: highlights_tokens
 	dataset = SummarizerDataset(
-		dataset=dataset,
+		split="train",
+		model_name=model_name,
 		bos_token=config.pad_token_id,
 	)
 	dataloader = data.DataLoader(
@@ -56,40 +41,40 @@ def main():
 			pad_token=config.pad_token_id,
 			ign_token=config.ign_token_id,
 		),
-		num_workers=4,
 	)
 
-	rouge_values = []
-	bar = tqdm(dataloader)
-	for batch in bar:
+	for batch in dataloader:
 		batch: SummarizerBatch = batch.to(device)
 
 		outputs = model.generate(
-			attention_mask=batch.pad_mask,
-			encoder_outputs=Encoder.Output(
-				last_hidden_state=batch.input_embeds,
-			),
+			input_ids=batch.article_tokens,
+			attention_mask=batch.article_padding,
+
+			max_new_tokens=128,
+			eos_token_id=model.eos_token,
 			use_cache=False,
+
 			do_sample=False,
-			num_beams=4,
+			num_beams=1,
 		)
 
-		outputs = tokenizer.batch_decode(
-			outputs,
-			skip_special_tokens=True,
-		)
+		summary_masks = batch.summary_tokens != model.ign_token
+		summaries = [
+			summary[mask].tolist()
+			for summary, mask in zip(batch.summary_tokens, summary_masks)
+		]
 
-		results = rouge.compute(
-			predictions=outputs,
-			references=batch.labels_str,
-			rouge_types=["rouge1"],  # , "rouge2", "rougeL", "rougeLsum"],
-			use_aggregator=False,
-		)
+		inputs = tokenizer.batch_decode(batch.article_tokens, skip_special_tokens=True, clean_up_tokenization_tokens=True)
+		summaries = tokenizer.batch_decode(summaries, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+		outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True, clean_up_tokenization_spaces=True)
 
-		rouge_values += results["rouge1"]
-		rouge_mean = sum(rouge_values) / len(rouge_values)
-		bar.set_postfix(r=rouge_mean)
-	bar.close()
+		for sample, summary, output in zip(inputs, summaries, outputs):
+			print("INP:", sample)
+			print("SUM:", summary)
+			print("OUT:", output)
+			print()
+		break
+
 
 if __name__ == "__main__":
 	main()
