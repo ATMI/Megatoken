@@ -1,10 +1,13 @@
-from functools import partial
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
+
+import torch
+from torch import LongTensor
 
 import datasets
-import torch
 from torch.utils import data
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizer
+
+tokenizer_: PreTrainedTokenizer | None = None
 
 
 class AutoEncoderDataset(data.Dataset):
@@ -13,58 +16,49 @@ class AutoEncoderDataset(data.Dataset):
 
 	@staticmethod
 	def tokenize(
-		tokenizer: str,
-		text_column: str,
-
 		batch: Dict[str, List[Any]],
+		model_name: str,
 	) -> Dict[str, List[Any]]:
-		tokenizer = AutoTokenizer.from_pretrained(tokenizer)
+		global tokenizer_
+		tokenizer_ = tokenizer_ or AutoTokenizer.from_pretrained(model_name)
 
-		batch = batch[text_column]
-		# batch = [sample.lower() for sample in batch]
-		batch = tokenizer(
-			text=batch,
-			padding=False,
-			truncation=True,
-			max_length=AutoEncoderDataset.MAX_LENGTH,
-			add_special_tokens=True,
-			return_attention_mask=False,
-		)
+		kwargs = {
+			"add_special_tokens": True,
+			"truncation": True,
+			"padding": False,
+			"return_attention_mask": False,
+		}
 
-		max_length = tokenizer.model_max_length
-		batch = batch["input_ids"]
-		result = []
-
-		for row in batch:
-			for start in range(0, len(row), max_length):
-				chunk = row[start: start + max_length]
-				if len(chunk) < AutoEncoderDataset.MIN_LENGTH:
-					continue
-				result.append(chunk)
+		article = tokenizer_(batch["article"], **kwargs)
+		summary = tokenizer_(batch["highlights"], **kwargs)
 
 		return {
-			"tokens": result,
+			"article": article["input_ids"],
+			"summary": summary["input_ids"],
 		}
 
 	def __init__(
 		self,
-		name: str,
-		version: str,
 		split: str,
-
-		tokenizer: str,
+		model_name: str,
 		ign_token: int,
-		text_column: str,
 	):
-		dataset = datasets.load_dataset(name, version, split=split)
-		columns = list(dataset.column_names)
-		dataset = dataset.map(
-			function=partial(AutoEncoderDataset.tokenize, tokenizer, text_column),
-			batched=True,
-			remove_columns=columns,
+		dataset = datasets.load_dataset(
+			path="abisee/cnn_dailymail",
+			name="3.0.0",
+			split=split,
 		)
 
-		tokenizer = AutoTokenizer.from_pretrained(tokenizer)
+		dataset = dataset.map(
+			function=AutoEncoderDataset.tokenize,
+			fn_kwargs={
+				"model_name": model_name,
+			},
+			batched=True,
+			remove_columns=list(dataset.column_names),
+		)
+
+		tokenizer = AutoTokenizer.from_pretrained(model_name)
 		self.bos_token = tokenizer.pad_token_id
 		self.eos_token = tokenizer.eos_token_id
 		self.ign_token = ign_token
@@ -73,7 +67,7 @@ class AutoEncoderDataset(data.Dataset):
 	def __len__(self):
 		return len(self.dataset)
 
-	def __getitem__(self, index):
+	def __getitem__(self, index) -> Tuple[LongTensor, LongTensor, LongTensor]:
 		sample = self.dataset[index]
 		#	a		b		c		<eos>	input_ids
 		#	<bos>	a		b		c		decoder_input_ids
@@ -83,10 +77,12 @@ class AutoEncoderDataset(data.Dataset):
 		#	<bos>	a		b		decoder_input_ids
 		#	a		b		c		labels = input_ids
 
-		input_ids = sample["tokens"]
-		decoder_input_ids = [self.bos_token] + input_ids[:-1]
+		label_ids = sample["summary"]
+		encoder_input_ids = sample["article"]
+		decoder_input_ids = [self.bos_token] + label_ids[:-1]
 
-		input_ids = torch.tensor(input_ids)
+		label_ids = torch.tensor(label_ids)
+		encoder_input_ids = torch.tensor(encoder_input_ids)
 		decoder_input_ids = torch.tensor(decoder_input_ids)
 
-		return input_ids, decoder_input_ids
+		return encoder_input_ids, decoder_input_ids, label_ids

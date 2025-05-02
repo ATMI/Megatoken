@@ -1,16 +1,15 @@
 import signal
 
-import torch
 from torch import optim
 from torch.nn import functional as fn
 from torch.utils import data
 from tqdm import tqdm
+from transformers import T5ForConditionalGeneration
 
 from .batch import AutoEncoderBatch
 from .checkpoint import AutoEncoderCheckpoint
 from .dataset import AutoEncoderDataset
 from .log import AutoEncoderLog
-from .model import AutoEncoder, AutoEncoderConfig
 from ..util.metric import accuracy
 from ..util.prepare import prepare_random, prepare_device
 from ..util.prompt import prompt
@@ -30,35 +29,28 @@ def main():
 	device = prepare_device()
 
 	model_name = "google/flan-t5-small"
-	config = AutoEncoderConfig.from_pretrained(model_name)
-
-	model = AutoEncoder.from_pretrained(model_name, config=config).to(device)
-	model = model.train()
-
-	# checkpoint = torch.load("autoencoder_00_18000.pth", map_location=device, weights_only=True)
-	# model.load_state_dict(checkpoint["model"])
+	model = T5ForConditionalGeneration.from_pretrained(model_name)
+	model = model.to(device).train()
 
 	dataset = AutoEncoderDataset(
-		name="abisee/cnn_dailymail",
-		version="3.0.0",
 		split="train",
-		text_column="article",
-		tokenizer=model_name,
-		ign_token=model.ign_token,
+		model_name=model_name,
+		ign_token=-100,
 	)
 	dataloader = data.DataLoader(
 		dataset=dataset,
-		batch_size=20,
+		batch_size=12,
 		shuffle=True,
 		collate_fn=AutoEncoderBatch.collate_fn(
-			pad_token=model.pad_token,
-			ign_token=model.ign_token,
+			pad_token=model.config.pad_token_id,
+			ign_token=-100,
 		),
 	)
 
-	optimizer = optim.Adam(
+	optimizer = optim.AdamW(
 		params=model.parameters(),
-		lr=3e-4,
+		lr=2e-5,
+		weight_decay=0.01,
 	)
 	scheduler = optim.lr_scheduler.StepLR(
 		optimizer=optimizer,
@@ -75,7 +67,7 @@ def main():
 		optimizer=optimizer,
 		scheduler=scheduler,
 		dataloader=dataloader,
-		freq_step=2000,
+		freq_step=5000,
 		limit=5,
 	)
 
@@ -98,36 +90,37 @@ def main():
 				decoder_attention_mask=None,
 			)
 
-			prune_lengths = output.prune_probs.sum(dim=2)
-			prune_ratios = torch.roll(prune_lengths, 1)
-			prune_ratios[:, 0] = batch.lengths
-			prune_ratios = prune_lengths / prune_ratios  # .detach()
+			# prune_lengths = output.prune_probs.sum(dim=2)
+			# prune_ratios = torch.roll(prune_lengths, 1)
+			# prune_ratios[:, 0] = batch.lengths
+			# prune_ratios = prune_lengths / prune_ratios  # .detach()
+			# loss_vol = (prune_ratios ** 2).mean()
 
-			loss_vol = (prune_ratios ** 2).mean()
-			loss_cls = fn.cross_entropy(
+			loss = fn.cross_entropy(
 				input=output.logits.flatten(0, 1),
 				target=batch.labels.flatten(),
-				ignore_index=model.ign_token
+				ignore_index=-100,
 			)
 
-			if step < warmup and epoch < 1:
-				loss = loss_cls
-			else:
-				loss = loss_cls + 3 * loss_vol
+			# if step < warmup and epoch < 1:
+			# 	loss = loss_cls
+			# else:
+			# 	loss = loss_cls + 3 * loss_vol
 
 			loss.backward()
 			optimizer.step()
 
-			loss_vol = loss_vol.item()
-			loss_cls = loss_cls.item()
+			# loss_vol = loss_vol.item()
+			# loss_cls = loss_cls.item()
 			loss = loss.item()
 
-			acc = accuracy(output.logits, batch.labels, model.ign_token)
-			abs_comp = prune_lengths[:, -1] / batch.lengths
-			abs_comp = abs_comp.mean().item()
-			rel_comp = prune_ratios.mean(dim=0).tolist()
+			acc = accuracy(output.logits, batch.labels, -100)
+			# abs_comp = prune_lengths[:, -1] / batch.lengths
+			# abs_comp = abs_comp.mean().item()
+			# rel_comp = prune_ratios.mean(dim=0).tolist()
 
-			postfix = log(acc, abs_comp, rel_comp, loss, loss_cls, loss_vol)
+			# postfix = log(acc, abs_comp, rel_comp, loss, loss_cls, loss_vol)
+			postfix = log(acc, loss)
 			bar.set_postfix(postfix)
 			bar.update(1)
 

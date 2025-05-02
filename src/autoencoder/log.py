@@ -12,31 +12,21 @@ class AutoEncoderLog:
 	def __call__(
 		self,
 		acc: float,
-		abs_comp: float,
-		rel_comp: List[float],
 		loss: float,
-		loss_cls: float,
-		loss_vol: float,
 	) -> Dict[str, str]:
 		log = {
 			"acc": acc,
-			"abs_comp": abs_comp,
-			"rel_comp": rel_comp,
-			"loss": loss,
-			"loss_cls": loss_cls,
-			"loss_vol": loss_vol,
+			"loss": loss
 		}
 
 		json.dump(log, self.file)
 		self.file.write("\n")
 		self.file.flush()
 
-		acc, abs_comp, loss_cls, loss_vol = self.rolling(acc, abs_comp, loss_cls, loss_vol)
+		acc, loss = self.rolling(acc, loss)
 		return {
 			"acc": f"{acc * 100:.2f}",
-			"com": f"{abs_comp * 100:.2f}",
-			"cls": f"{loss_cls:.4f}",
-			"vol": f"{loss_vol:.4f}",
+			"los": f"{loss:.2f}",
 		}
 
 	def close(self):

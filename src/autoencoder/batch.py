@@ -32,11 +32,10 @@ class AutoEncoderBatch:
 		pad_token: int,
 		ign_token: int,
 	) -> "AutoEncoderBatch":
-		encoder_input_ids, decoder_input_ids = tuple(map(list, zip(*batch)))
+		encoder_input_ids, decoder_input_ids, label_ids = tuple(map(list, zip(*batch)))
 		lengths = torch.tensor([len(sample) for sample in encoder_input_ids], dtype=torch.long)
-		labels = encoder_input_ids
 
-		labels = rnn.pad_sequence(labels, batch_first=True, padding_value=ign_token)
+		label_ids = rnn.pad_sequence(label_ids, batch_first=True, padding_value=ign_token)
 		encoder_input_ids = rnn.pad_sequence(encoder_input_ids, batch_first=True, padding_value=pad_token)
 		decoder_input_ids = rnn.pad_sequence(decoder_input_ids, batch_first=True, padding_value=pad_token)
 
@@ -45,7 +44,7 @@ class AutoEncoderBatch:
 
 		return AutoEncoderBatch(
 			lengths=lengths,
-			labels=labels,
+			labels=label_ids,
 
 			encoder_input_ids=encoder_input_ids,
 			decoder_input_ids=decoder_input_ids,
