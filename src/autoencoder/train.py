@@ -1,7 +1,7 @@
 import signal
 
 import torch
-from torch import optim
+from torch import optim, Tensor
 from torch.nn import functional as fn
 from torch.utils import data
 from tqdm import tqdm
@@ -32,11 +32,8 @@ def main():
 	model_name = "google/flan-t5-small"
 	config = AutoEncoderConfig.from_pretrained(model_name)
 
-	model = AutoEncoder.from_pretrained(model_name, config=config).to(device)
-	model = model.train()
-
-	# checkpoint = torch.load("autoencoder_00_18000.pth", map_location=device, weights_only=True)
-	# model.load_state_dict(checkpoint["model"])
+	model = AutoEncoder.from_pretrained(model_name, config=config)
+	model = model.train().to(device)
 
 	dataset = AutoEncoderDataset(
 		name="abisee/cnn_dailymail",
@@ -48,7 +45,7 @@ def main():
 	)
 	dataloader = data.DataLoader(
 		dataset=dataset,
-		batch_size=20,
+		batch_size=16,
 		shuffle=True,
 		collate_fn=AutoEncoderBatch.collate_fn(
 			pad_token=model.pad_token,
@@ -56,9 +53,10 @@ def main():
 		),
 	)
 
-	optimizer = optim.Adam(
+	optimizer = optim.AdamW(
 		params=model.parameters(),
-		lr=3e-4,
+		lr=2e-5,
+		weight_decay=0.01,
 	)
 	scheduler = optim.lr_scheduler.StepLR(
 		optimizer=optimizer,
@@ -101,10 +99,10 @@ def main():
 			prune_lengths = output.prune_probs.sum(dim=2)
 			prune_ratios = torch.roll(prune_lengths, 1)
 			prune_ratios[:, 0] = batch.lengths
-			prune_ratios = prune_lengths / prune_ratios  # .detach()
+			prune_ratios = prune_lengths / prune_ratios.detach()
 
-			loss_vol = (prune_ratios ** 2).mean()
-			loss_cls = fn.cross_entropy(
+			loss_vol: Tensor = (prune_ratios ** 2).mean()
+			loss_cls: Tensor = fn.cross_entropy(
 				input=output.logits.flatten(0, 1),
 				target=batch.labels.flatten(),
 				ignore_index=model.ign_token
@@ -113,7 +111,7 @@ def main():
 			if step < warmup and epoch < 1:
 				loss = loss_cls
 			else:
-				loss = loss_cls + 3 * loss_vol
+				loss = 0.4 * loss_cls + 0.6 * loss_vol
 
 			loss.backward()
 			optimizer.step()

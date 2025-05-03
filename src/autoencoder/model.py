@@ -14,7 +14,7 @@ class AutoEncoderConfig(T5Config):
 	model_type = "t5-autoencoder"
 	decoder_visibility = 5
 	prune_temperature = 0.1
-	prune_bias = 5
+	prune_bias = 20
 	ign_token_id = -100
 
 	def __init__(self, **kwargs):

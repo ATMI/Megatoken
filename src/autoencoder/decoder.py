@@ -22,7 +22,7 @@ class Decoder(T5Stack):
 
 		self.register_buffer("decoder_indices", torch.arange(max_length, dtype=torch.long), False)
 		self.register_buffer("encoder_indices", torch.arange(max_length, dtype=torch.long), False)
-		self.register_buffer("decoder_attn_mask", mask, False)
+		self.register_buffer("visibility_mask", mask, False)
 
 	def forward(
 		self,
@@ -40,7 +40,7 @@ class Decoder(T5Stack):
 		decoder_embeds_indices = self.decoder_indices[:decoder_embeds_length]
 
 		encoder_attn_mask = encoder_attention_mask[:, None, None, :]
-		decoder_attn_mask = self.decoder_attn_mask[None, None, :decoder_embeds_length, :decoder_embeds_length]
+		decoder_attn_mask = self.visibility_mask[None, None, :decoder_embeds_length, :decoder_embeds_length]
 
 		decoder_embeds = self.embed_tokens(input_ids)
 		# decoder_embeds = self.dropout(decoder_embeds)
