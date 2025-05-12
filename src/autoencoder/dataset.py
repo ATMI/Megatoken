@@ -1,12 +1,12 @@
-import random
 from functools import partial
 from typing import List, Dict, Any
 
 import datasets
 import torch
 from torch.utils import data
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizer
 
+tokenizer: PreTrainedTokenizer | None = None
 
 class AutoEncoderDataset(data.Dataset):
 	MIN_LENGTH = 16
@@ -14,15 +14,15 @@ class AutoEncoderDataset(data.Dataset):
 
 	@staticmethod
 	def tokenize(
-		tokenizer: str,
+		model_name: str,
 		text_column: str,
 
 		batch: Dict[str, List[Any]],
 	) -> Dict[str, List[Any]]:
-		tokenizer = AutoTokenizer.from_pretrained(tokenizer)
+		global tokenizer
+		tokenizer = tokenizer or AutoTokenizer.from_pretrained(model_name)
 
 		batch = batch[text_column]
-		# batch = [sample.lower() for sample in batch]
 		batch = tokenizer(
 			text=batch,
 			padding=False,
@@ -44,31 +44,30 @@ class AutoEncoderDataset(data.Dataset):
 				result.append(chunk)
 
 		return {
-			"tokens": result,
+			"input_ids": result,
 		}
 
 	def __init__(
 		self,
 		name: str,
-		version: str,
+		version: str | None,
 		split: str,
 
-		tokenizer: str,
+		model_name: str,
 		ign_token: int,
 		text_column: str,
 	):
+		global tokenizer
+		tokenizer = AutoTokenizer.from_pretrained(model_name)
+
 		dataset = datasets.load_dataset(name, version, split=split)
 		columns = list(dataset.column_names)
 		dataset = dataset.map(
-			function=partial(AutoEncoderDataset.tokenize, tokenizer, text_column),
+			function=partial(AutoEncoderDataset.tokenize, model_name, text_column),
 			batched=True,
 			remove_columns=columns,
 		)
 
-		tokenizer = AutoTokenizer.from_pretrained(tokenizer)
-		vocab = set(tokenizer.get_vocab().values()) - set(tokenizer.all_special_ids)
-
-		self.vocab = list(vocab)
 		self.bos_token = tokenizer.pad_token_id
 		self.eos_token = tokenizer.eos_token_id
 		self.ign_token = ign_token
@@ -87,17 +86,10 @@ class AutoEncoderDataset(data.Dataset):
 		#	<bos>	a		b		decoder_input_ids
 		#	a		b		c		labels = input_ids
 
-		encoder_input_ids = sample["tokens"]
-		decoder_input_ids = [self.bos_token] + encoder_input_ids[:-1]
+		input_ids = sample["input_ids"]
+		decoder_input_ids = [self.bos_token] + input_ids[:-1]
 
-		encoder_input_ids = torch.tensor(encoder_input_ids)
+		input_ids = torch.tensor(input_ids)
 		decoder_input_ids = torch.tensor(decoder_input_ids)
 
-		input_length = len(encoder_input_ids) - 1
-		n = int(0.1 * input_length)
-		if n > 0:
-			indices = random.sample(range(input_length), n)
-			noise = random.sample(self.vocab, n)
-			encoder_input_ids[indices] = torch.tensor(noise)
-
-		return encoder_input_ids, decoder_input_ids
+		return input_ids, decoder_input_ids

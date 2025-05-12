@@ -23,8 +23,8 @@ def interrupt(_, __):
 
 
 def main():
-	epoch_num = 2
-	warmup = 500
+	epoch_num = 1
+	warmup = 0
 
 	prepare_random()
 	device = prepare_device()
@@ -35,12 +35,16 @@ def main():
 	model = AutoEncoder.from_pretrained(model_name, config=config)
 	model = model.train().to(device)
 
+	model_init = "checkpoint/a80cc2759968a882eb92e8e8ae1a9cac7bb191c0/autoencoder_00.pth"
+	model_init = torch.load(model_init, map_location=device, weights_only=True)
+	model.load_state_dict(model_init["model"])
+
 	dataset = AutoEncoderDataset(
-		name="abisee/cnn_dailymail",
-		version="3.0.0",
+		name="stanfordnlp/imdb",
+		version=None,
 		split="train",
-		text_column="article",
-		tokenizer=model_name,
+		text_column="text",
+		model_name=model_name,
 		ign_token=model.ign_token,
 	)
 	dataloader = data.DataLoader(
@@ -53,10 +57,9 @@ def main():
 		),
 	)
 
-	optimizer = optim.AdamW(
+	optimizer = optim.Adam(
 		params=model.parameters(),
-		lr=2e-5,
-		weight_decay=0.01,
+		lr=3e-4,
 	)
 	scheduler = optim.lr_scheduler.StepLR(
 		optimizer=optimizer,
@@ -99,7 +102,7 @@ def main():
 			prune_lengths = output.prune_probs.sum(dim=2)
 			prune_ratios = torch.roll(prune_lengths, 1)
 			prune_ratios[:, 0] = batch.lengths
-			prune_ratios = prune_lengths / prune_ratios.detach()
+			prune_ratios = prune_lengths / prune_ratios
 
 			loss_vol: Tensor = (prune_ratios ** 2).mean()
 			loss_cls: Tensor = fn.cross_entropy(
@@ -111,7 +114,7 @@ def main():
 			if step < warmup and epoch < 1:
 				loss = loss_cls
 			else:
-				loss = 0.4 * loss_cls + 0.6 * loss_vol
+				loss = loss_cls + 3 * loss_vol
 
 			loss.backward()
 			optimizer.step()

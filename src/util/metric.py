@@ -57,7 +57,7 @@ class RollingMean:
 		else:
 			self.sums = tuple(map(add, self.sums, values))
 
-		if len(self.values) > self.n:
+		if 0 < self.n < len(self.values):
 			values = self.values.pop(0)
 			self.sums = tuple(map(sub, self.sums, values))
 
@@ -115,7 +115,7 @@ def confusion(
 	logits: Tensor,
 	target: Tensor,
 ) -> Confusion:
-	pred = logits > 0
+	pred = logits.argmax(dim=-1)
 
 	tp = ((pred == 1) & (target == 1)).sum().item()
 	fp = ((pred == 1) & (target == 0)).sum().item()

@@ -57,7 +57,7 @@ class Encoder(T5Stack):
 		temperature = self.config.prune_temperature
 		max_length = self.config.n_positions
 
-		self.prune_layers = nn.ModuleList([PruneLayer(bias, temperature) for _ in range(len(self.block))])
+		self.prune_layers = nn.ModuleList([PruneLayer(bias, temperature) for _ in range(len(self.block) // 2)])
 		self.register_buffer("token_indices", torch.arange(max_length), False)
 
 	def forward(
@@ -80,7 +80,7 @@ class Encoder(T5Stack):
 		attention_mask[:, token_indices, token_indices] = 0.0
 		attention_mask = attention_mask.unsqueeze(1)
 
-		prune_masks = torch.zeros((batch_size, len(self.block), input_length), device=device)
+		prune_masks = torch.zeros((batch_size, len(self.block) // 2, input_length), device=device)
 		prune_probs = torch.zeros_like(prune_masks)
 		prune_keep = (torch.rand(batch_size, device=device) * input_lengths).long()
 
@@ -88,7 +88,8 @@ class Encoder(T5Stack):
 		# embeds = self.dropout(embeds)
 
 		for i, encoder_layer in enumerate(self.block):
-			embeds[:, :, 0] = 0.0
+			if i % 2 == 0:
+				embeds[:, :, 0] = 0.0
 			embeds, attention_mask = encoder_layer(
 				hidden_states=embeds,
 				cache_position=token_indices,
@@ -96,6 +97,10 @@ class Encoder(T5Stack):
 				position_bias=attention_mask if i > 0 else None,
 				output_attentions=False,
 			)
+
+			if i % 2 != 0:
+				continue
+			i //= 2
 
 			prune_layer = self.prune_layers[i]
 			prune_mask = prune_layer(embeds=embeds)

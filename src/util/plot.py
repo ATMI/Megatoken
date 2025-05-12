@@ -24,7 +24,7 @@ def load(path: str) -> Tuple[int, Dict[str, List[float]]]:
 
 def main():
 	start = time()
-	# x, data = load("../MegatokenOld/autoencoder.log")
+	# x, data = load("log/a80cc2759968a882eb92e8e8ae1a9cac7bb191c0.json")
 	x, data = load("autoencoder.log")
 	stop = time()
 	print(stop - start)
