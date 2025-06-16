@@ -17,7 +17,7 @@ def main():
 	device = prepare_device()
 
 	encoder = Encoder(
-		checkpoint="autoencoder_00_01901.pth",
+		checkpoint="autoencoder_00.pth",
 		device=device,
 	)
 
@@ -38,7 +38,7 @@ def main():
 	)
 
 	classifier = Classifier(num_classes=2)
-	classifier_init = "3_classifier.pth"
+	classifier_init = "1_classifier.pth"
 	classifier_init = torch.load(classifier_init, map_location="cpu", weights_only=True)
 	classifier.load_state_dict(classifier_init)
 	classifier = classifier.eval().to(device)

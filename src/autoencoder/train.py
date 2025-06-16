@@ -35,12 +35,12 @@ def main():
 	model = AutoEncoder.from_pretrained(model_name, config=config)
 	model = model.train().to(device)
 
-	model_init = "checkpoint/a80cc2759968a882eb92e8e8ae1a9cac7bb191c0/autoencoder_00.pth"
-	model_init = torch.load(model_init, map_location=device, weights_only=True)
-	model.load_state_dict(model_init["model"])
+	# model_init = "checkpoint/a80cc2759968a882eb92e8e8ae1a9cac7bb191c0/autoencoder_00.pth"
+	# model_init = torch.load(model_init, map_location=device, weights_only=True)
+	# model.load_state_dict(model_init["model"])
 
 	dataset = AutoEncoderDataset(
-		name="stanfordnlp/imdb",
+		name="Yelp/yelp_review_full",
 		version=None,
 		split="train",
 		text_column="text",

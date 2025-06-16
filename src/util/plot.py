@@ -24,8 +24,8 @@ def load(path: str) -> Tuple[int, Dict[str, List[float]]]:
 
 def main():
 	start = time()
-	# x, data = load("log/a80cc2759968a882eb92e8e8ae1a9cac7bb191c0.json")
-	x, data = load("autoencoder.log")
+	x, data = load("log/a80cc2759968a882eb92e8e8ae1a9cac7bb191c0.json")
+	# x, data = load("autoencoder.log")
 	stop = time()
 	print(stop - start)
 
@@ -40,25 +40,24 @@ def main():
 	rel_comp = rolling(data["rel_comp"])
 	rel_comp = tuple(zip(*rel_comp))
 
-	fig, ax1 = plt.subplots()
+	fig, ax1 = plt.subplots(
+		figsize=(6, 4),
+		constrained_layout=True,
+	)
 	ax1.set_ylim(0, 1)
 	ax1.set_yticks(np.arange(0, 1.1, 0.1))
-	ax1.plot(
-		x, acc,
-		label="accuracy",
-		color="k",
-	)
+	ax1.plot(x, acc, label="Accuracy", color="k", lw=2, ls="-")
 
 	ax2 = ax1.twinx()
 	ax2.set_ylim(0, 1)
 	ax2.set_yticks(np.arange(0, 1.1, 0.1))
 
 	for i, r in enumerate(rel_comp):
-		ax2.plot(x, r, label=f"{i}")
-	ax2.plot(x, abs_comp, label="total")
+		ax2.plot(x, r, label=f"Layer {2 * i}", lw=2, ls=":")
+	ax2.plot(x, abs_comp, label="Overall", lw=2, ls="--")
 
-	ax1.set_xlim(0, 34254)
-	ax2.set_xlim(0, 34254)
+	ax1.set_xlim(0, 42230)
+	ax2.set_xlim(0, 42230)
 
 	# ax1.set_xlim(0, 1000)
 	# ax2.set_xlim(0, 1000)
@@ -67,6 +66,7 @@ def main():
 	ax2.legend(loc="lower left")
 
 	plt.grid(True)
+	plt.savefig("fig.pdf")
 	plt.show()
 
 

@@ -8,6 +8,7 @@ from .batch import ClassifierBatch
 from .dataset import ClassifierDataset
 from .encoder import Encoder
 from .model import Classifier
+
 from ..util import metric
 from ..util.metric import RollingMean
 from ..util.prepare import prepare_random, prepare_device
@@ -18,7 +19,7 @@ def main():
 	device = prepare_device()
 
 	encoder = Encoder(
-		checkpoint="autoencoder_00_01901.pth",
+		checkpoint="autoencoder_00.pth",
 		device=device,
 	)
 
